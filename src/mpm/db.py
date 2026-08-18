@@ -52,7 +52,8 @@ the cube's spatial domain."""
 _NAME_RE = re.compile(r"^[a-z][a-z0-9_]{2,40}$")
 
 _SCHEMA = """
-CREATE TABLE IF NOT EXISTS sources (
+CREATE SCHEMA IF NOT EXISTS catalog;
+CREATE TABLE IF NOT EXISTS catalog.sources (
     name        text PRIMARY KEY,
     url         text NOT NULL,
     filename    text NOT NULL,
@@ -65,15 +66,15 @@ CREATE TABLE IF NOT EXISTS sources (
     sha256_pin  text,
     added_utc   timestamptz NOT NULL DEFAULT now()
 );
-CREATE TABLE IF NOT EXISTS runs (
+CREATE TABLE IF NOT EXISTS catalog.runs (
     run_id      text PRIMARY KEY,
     profile     text NOT NULL,
     created_utc timestamptz NOT NULL DEFAULT now(),
     headline    jsonb NOT NULL DEFAULT '{}',
     report      jsonb NOT NULL DEFAULT '{}'
 );
-CREATE TABLE IF NOT EXISTS run_cells (
-    run_id    text NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
+CREATE TABLE IF NOT EXISTS catalog.run_cells (
+    run_id    text NOT NULL REFERENCES catalog.runs(run_id) ON DELETE CASCADE,
     model     text NOT NULL,
     h3        text NOT NULL,
     score     double precision,
@@ -82,7 +83,7 @@ CREATE TABLE IF NOT EXISTS run_cells (
     fold      integer,
     PRIMARY KEY (run_id, model, h3)
 );
-CREATE INDEX IF NOT EXISTS run_cells_score_idx ON run_cells (run_id, model, score DESC);
+CREATE INDEX IF NOT EXISTS run_cells_score_idx ON catalog.run_cells (run_id, model, score DESC);
 """
 
 
@@ -115,7 +116,7 @@ def init_schema() -> None:
         for s in REGISTRY.values():
             conn.execute(
                 """
-                INSERT INTO sources (name, url, filename, kind, description, citation,
+                INSERT INTO catalog.sources (name, url, filename, kind, description, citation,
                                      builtin, sha256_pin)
                 VALUES (%s, %s, %s, 'builtin', %s, %s, true, %s)
                 ON CONFLICT (name) DO NOTHING
@@ -165,7 +166,7 @@ def add_source(
     with connect() as conn:
         cur = conn.execute(
             """
-            INSERT INTO sources (name, url, filename, kind, value_name, description, citation)
+            INSERT INTO catalog.sources (name, url, filename, kind, value_name, description, citation)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (name) DO NOTHING
             RETURNING name
@@ -184,7 +185,7 @@ def set_source_enabled(name: str, enabled: bool) -> None:
         )
     with connect() as conn:
         cur = conn.execute(
-            "UPDATE sources SET enabled = %s WHERE name = %s RETURNING name", (enabled, name)
+            "UPDATE catalog.sources SET enabled = %s WHERE name = %s RETURNING name", (enabled, name)
         )
         if cur.fetchone() is None:
             raise KeyError(name)
@@ -206,7 +207,7 @@ def list_sources() -> list[dict[str, Any]]:
         cur = conn.execute(
             """
             SELECT name, url, kind, value_name, description, citation, enabled, builtin
-            FROM sources ORDER BY builtin DESC, added_utc, name
+            FROM catalog.sources ORDER BY builtin DESC, added_utc, name
             """
         )
         cols = [d.name for d in cur.description]
@@ -223,7 +224,7 @@ def extra_sources() -> list[tuple[Source, str, str]]:
         cur = conn.execute(
             """
             SELECT name, url, filename, kind, value_name, description, citation, sha256_pin
-            FROM sources WHERE NOT builtin AND enabled ORDER BY name
+            FROM catalog.sources WHERE NOT builtin AND enabled ORDER BY name
             """
         )
         rows = cur.fetchall()
@@ -245,7 +246,7 @@ def builtin_enabled(name: str) -> bool:
     if not available():
         return True
     with connect() as conn:
-        cur = conn.execute("SELECT enabled FROM sources WHERE name = %s", (name,))
+        cur = conn.execute("SELECT enabled FROM catalog.sources WHERE name = %s", (name,))
         row = cur.fetchone()
     return True if row is None else bool(row[0])
 
@@ -260,7 +261,7 @@ def record_run(run_id: str, profile: str, headline: dict, report: dict) -> None:
     with connect() as conn:
         conn.execute(
             """
-            INSERT INTO runs (run_id, profile, headline, report)
+            INSERT INTO catalog.runs (run_id, profile, headline, report)
             VALUES (%s, %s, %s, %s)
             ON CONFLICT (run_id) DO NOTHING
             """,
@@ -279,12 +280,12 @@ def copy_cells(run_id: str, scores_by_model: dict[str, Any]) -> None:
 
     with connect() as conn:
         exists = conn.execute(
-            "SELECT 1 FROM run_cells WHERE run_id = %s LIMIT 1", (run_id,)
+            "SELECT 1 FROM catalog.run_cells WHERE run_id = %s LIMIT 1", (run_id,)
         ).fetchone()
         if exists:
             return
         with conn.cursor() as cur, cur.copy(
-            "COPY run_cells (run_id, model, h3, score, score_std, label, fold) FROM STDIN"
+            "COPY catalog.run_cells (run_id, model, h3, score, score_std, label, fold) FROM STDIN"
         ) as cp:
             for model, scores in scores_by_model.items():
                 for h3, score, std, label, fold in zip(
@@ -305,7 +306,7 @@ def list_runs(profile: str | None = None) -> list[dict[str, Any]]:
         return []
     init_schema()
     with connect() as conn:
-        q = "SELECT run_id, profile, created_utc, headline FROM runs"
+        q = "SELECT run_id, profile, created_utc, headline FROM catalog.runs"
         params: tuple = ()
         if profile:
             q += " WHERE profile = %s"

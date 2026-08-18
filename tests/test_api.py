@@ -67,3 +67,26 @@ def test_unknown_run_404s(client: TestClient):
 
 def test_path_traversal_rejected(client: TestClient):
     assert client.get("/api/profiles/..%2F..%2Fetc/runs/latest/report").status_code in (404, 422)
+
+
+def test_sources_fallback_without_db(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    body = client.get("/api/sources").json()
+    assert body["catalog_db"] is False
+    assert {s["name"] for s in body["sources"]} >= {"mrds", "magnetic"}
+
+
+def test_add_source_needs_db(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    res = client.post("/api/sources", json={
+        "name": "ngdb_soil", "url": "https://mrdata.usgs.gov/ngdb/soil/ngdbsoil-csv.zip",
+        "kind": "ngdb_geochem", "value_name": "soil",
+    })
+    assert res.status_code == 503
+
+
+def test_add_source_shape_validation(client: TestClient):
+    res = client.post("/api/sources", json={
+        "name": "Bad Name!", "url": "x", "kind": "shapefile", "value_name": "v",
+    })
+    assert res.status_code == 422

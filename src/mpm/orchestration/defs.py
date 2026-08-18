@@ -28,8 +28,8 @@ Storage note: with DAGSTER_HOME set and dagster.yaml pointing at Postgres
 `dagster asset materialize` invocations from other containers.
 """
 
-from __future__ import annotations
-
+# NOTE: no `from __future__ import annotations` here -- postponed (stringified)
+# annotations break Dagster's detection of the `context` parameter type.
 import os
 from pathlib import Path
 

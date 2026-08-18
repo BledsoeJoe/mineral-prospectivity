@@ -10,25 +10,37 @@ this project reports ROC-AUC of 0.98 and produces a map that is worthless on any
 ground you have not already drilled. This one reports 0.95 and explains the
 difference.
 
-Three layers, one compose file:
+Five services, one compose file:
 
-- **`mpm etl`** — a structured ingest pipeline that *acquires* open USGS data
-  (checksummed, cached, retried), *validates* it through data-quality gates,
-  *cleans* it (censored geochemistry, Null Island coordinates, free-text
-  commodity fields), assembles an H3 datacube, trains the models, and
-  *publishes* versioned run artifacts. Every stage writes a manifest; reruns
-  recompute exactly the stages whose inputs changed, and nothing else.
-- **`mpm.api`** — a thin FastAPI service over the published artifacts.
-- **`web/`** — a React + deck.gl map app: prospectivity surface on H3 hexes,
-  ensemble uncertainty, the spatial CV folds, capture curves, and the
-  exploration-bias audit, in light and dark mode.
+- **`mpm etl` + Dagster** — a structured ingest pipeline that *acquires* open
+  USGS data (checksummed, cached, retried), *validates* it through
+  data-quality gates, *cleans* it (censored geochemistry, BOM'd headers, Null
+  Island coordinates, free-text commodity fields), assembles an H3 datacube,
+  trains the models, and *publishes* versioned run artifacts. Every stage
+  writes a manifest; reruns recompute exactly the stages whose inputs changed.
+  The stage functions are orchestrator-free; Dagster wraps them as a
+  partitioned asset graph (lineage, run history, a weekly refresh schedule,
+  UI on :3000).
+- **Postgres** — the catalog: the data-source registry (including sources
+  registered at runtime through the UI), the run index, per-cell scores in
+  queryable form, and Dagster's own storage. Bulk artifacts stay on the
+  volume; the catalog can always be rebuilt from them (`mpm etl backfill-db`).
+- **`mpm.api`** — a thin FastAPI service over the published artifacts plus
+  source management endpoints (host-allowlisted; the pipeline fetches what
+  you register).
+- **`web/`** — a React + deck.gl app: the map (prospectivity, uncertainty,
+  CV folds, top-N% shortlist), plus About / Research / Breakdown /
+  Architecture pages that explain what everything means, where the ideas come
+  from, and how the system fits together. The Architecture page includes the
+  live source catalog: register a new USGS grid or NGDB-style geochem zip
+  there and the next materialization folds it into the cube — no code change.
 
 ```bash
-docker compose up --build         # synth profile -> http://localhost:8080
+docker compose up --build         # synth profile -> web :8080, dagster :3000
 MPM_PROFILE=us-cu docker compose up --build   # real-data US copper cube
 
 # or, without docker:
-pip install -e ".[dev,api]"
+pip install -e ".[dev,api,orchestration]"
 python -m mpm etl run --profile us-cu --data-root data
 uvicorn mpm.api:app &             # api on :8000
 cd web && npm install && npm run dev          # frontend on :5173
@@ -210,8 +222,9 @@ pipeline in the spirit of a structured ingest system.
 
 ```
 acquire ──┬─ labels ────┐
-          ├─ geophys ───┼─ cube ── train ── publish
-          └─ geochem ───┘
+          ├─ geophys ───┤
+          ├─ geochem ───┼─ cube ── train ── publish
+          └─ extras ────┘
 ```
 
 ```bash
@@ -219,7 +232,17 @@ python -m mpm etl profiles                          # what can be built
 python -m mpm etl run --profile us-cu --data-root data
 python -m mpm etl status --data-root data           # stage freshness, latest runs
 python -m mpm etl run --profile us-cu --force cube  # surgical rebuild
+python -m mpm etl backfill-db --data-root data      # rebuild catalog from artifacts
+
+# the same stages, orchestrated (lineage, partitions, schedule):
+dagster dev -f src/mpm/orchestration/defs.py
 ```
+
+`extras` are sources registered at runtime in the Postgres catalog (via the
+web UI's Architecture page or `POST /api/sources`): additional `xyz_grid`
+files or NGDB-style `ngdb_geochem` zips from allowlisted hosts. The covariate
+name you give a source decides which side of the bias audit it lands on — the
+quarantine list is the arbiter, visibly.
 
 The `us-cu` profile builds a conterminous-US copper cube from scratch, from
 four open USGS sources (~220 MB total, fetched once and cached):
@@ -323,19 +346,22 @@ src/mpm/
   plots.py       map, capture curves, importance
   report.py      report assembly shared by CLI and pipeline
   api.py         FastAPI service over published runs
+  db.py          optional Postgres catalog (sources, runs, cells); graceful file-mode fallback
   etl/
     sources.py   registry of upstream datasets (url, citation, optional pin)
     acquire.py   cached, checksummed, retrying downloads
-    readers.py   format-hostile parsing (MRDS, XYZ grids, NGDB censoring)
+    readers.py   format-hostile parsing (MRDS, XYZ grids, NGDB censoring + BOMs)
     gridding.py  point/grid -> H3 cell aggregation
     validate.py  data-quality gates between stages
     stages.py    manifest-based stage freshness
     profiles.py  named end-to-end configurations
     flow.py      the DAG; label/leak decisions live here
     publish.py   versioned web artifacts (cells, curves, report, provenance)
-web/             React + deck.gl frontend
-docker/          Dockerfiles + nginx config; docker-compose.yml at the root
-tests/           44 tests, focused on silent-failure paths
+  orchestration/
+    defs.py      Dagster asset graph over the stage functions (partitions = profiles)
+web/             React + deck.gl frontend (map + About/Research/Breakdown/Architecture)
+docker/          Dockerfiles, nginx config, dagster.yaml; docker-compose.yml at the root
+tests/           57 tests, focused on silent-failure paths
 scripts/         external-data preparation
 configs/         every knob that changes a result
 ```

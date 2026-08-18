@@ -21,7 +21,7 @@
 #   docker compose run --rm pipeline python -m mpm etl run --profile us-cu --data-root /data
 #   docker compose run --rm pipeline python -m mpm etl status --data-root /data
 #   docker compose run --rm pipeline pytest -q
-#   docker compose exec postgres psql -U mpm mpm -c 'select run_id, profile from runs'
+#   docker compose exec postgres psql -U mpm mpm -c 'select run_id, profile from catalog.runs'
 
 x-python-env: &python-env
   MPM_DATA_ROOT: /data

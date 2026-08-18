@@ -116,6 +116,14 @@ def _ngdb_member_prefix(z: zipfile.ZipFile) -> str:
     raise ValueError(f"{z.filename}: no */bestvalue.csv member; not an NGDB csv zip")
 
 
+def _strip_bom(col: str) -> str:
+    """Some NGDB media (soil) ship with a UTF-8 BOM, others (sediment) do not.
+    Under the latin-1 read the BOM decodes to 'ï»¿' glued to the first column
+    name, so 'lab_id' silently stops existing. Same agency, same schema,
+    different vintage of export tooling -- the usual."""
+    return col.removeprefix("﻿").removeprefix("ï»¿")
+
+
 def read_ngdb_geochem(
     path: Path,
     elements: tuple[str, ...] = NGDB_DEFAULT_ELEMENTS,
@@ -146,10 +154,12 @@ def read_ngdb_geochem(
         with z.open(f"{prefix}/main.csv") as f:
             sites = pd.read_csv(
                 f,
-                usecols=["lab_id", "lat_wgs84", "long_wgs84"],
+                usecols=lambda c: _strip_bom(c) in {"lab_id", "lat_wgs84", "long_wgs84"},
                 encoding="latin-1",
                 low_memory=False,
-            ).rename(columns={"lat_wgs84": "latitude", "long_wgs84": "longitude"})
+            )
+        sites.columns = [_strip_bom(c) for c in sites.columns]
+        sites = sites.rename(columns={"lat_wgs84": "latitude", "long_wgs84": "longitude"})
         sites["latitude"] = pd.to_numeric(sites["latitude"], errors="coerce")
         sites["longitude"] = pd.to_numeric(sites["longitude"], errors="coerce")
         sites = sites.dropna().drop_duplicates(subset="lab_id")
@@ -160,11 +170,12 @@ def read_ngdb_geochem(
         with z.open(f"{prefix}/bestvalue.csv") as f:
             for chunk in pd.read_csv(
                 f,
-                usecols=["lab_id", "species", "unit", "qvalue"],
+                usecols=lambda c: _strip_bom(c) in {"lab_id", "species", "unit", "qvalue"},
                 encoding="latin-1",
                 chunksize=chunksize,
                 low_memory=False,
             ):
+                chunk.columns = [_strip_bom(c) for c in chunk.columns]
                 part = chunk[chunk["species"].isin(wanted)].copy()
                 if len(part):
                     parts.append(part)
