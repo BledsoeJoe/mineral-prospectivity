@@ -1,0 +1,10 @@
+# Dagster instance config. Run/event storage lives in the same Postgres as
+# the source catalog, so the webserver and any `dagster asset materialize`
+# from another container share one history.
+storage:
+  postgres:
+    postgres_url:
+      env: DAGSTER_PG_URL
+
+telemetry:
+  enabled: false

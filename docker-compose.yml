@@ -1,0 +1,109 @@
+# Full stack:
+#
+#   docker compose up --build          # pipeline (synth) + postgres + api + dagster + web
+#   MPM_PROFILE=us-cu docker compose up --build   # real-data US copper cube
+#
+#   web (nginx + React app)  -> http://localhost:8080
+#   dagster UI               -> http://localhost:3000
+#
+# Services:
+#   postgres  the catalog: data sources (incl. user-added), run index,
+#             per-cell scores -- and Dagster's own run storage.
+#   pipeline  one-shot CLI run of the ${MPM_PROFILE} profile; publishes to the
+#             shared ./data volume and exits. Safe to re-run: stage manifests
+#             make an unchanged pipeline a no-op.
+#   dagster   the orchestrator UI. Materialize the us-cu / us-znpb partitions
+#             from here, watch lineage, enable the weekly refresh schedule.
+#   api       read-only FastAPI over published artifacts + source management.
+#   web       the frontend, proxying /api to the api service.
+#
+# Other invocations run through the same images, e.g.:
+#   docker compose run --rm pipeline python -m mpm etl run --profile us-cu --data-root /data
+#   docker compose run --rm pipeline python -m mpm etl status --data-root /data
+#   docker compose run --rm pipeline pytest -q
+#   docker compose exec postgres psql -U mpm mpm -c 'select run_id, profile from runs'
+
+x-python-env: &python-env
+  MPM_DATA_ROOT: /data
+  DATABASE_URL: postgresql://mpm:${POSTGRES_PASSWORD:-mpm}@postgres:5432/mpm
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: mpm
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mpm}
+      POSTGRES_DB: mpm
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mpm -d mpm"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  pipeline:
+    build:
+      context: .
+      dockerfile: docker/python.Dockerfile
+    command: python -m mpm etl run --profile ${MPM_PROFILE:-synth} --data-root /data
+    environment: *python-env
+    volumes:
+      - ./data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  dagster:
+    build:
+      context: .
+      dockerfile: docker/python.Dockerfile
+    command: >
+      bash -c "mkdir -p $$DAGSTER_HOME
+      && cp docker/dagster.yaml $$DAGSTER_HOME/dagster.yaml
+      && dagster dev -h 0.0.0.0 -p 3000 -f src/mpm/orchestration/defs.py"
+    environment:
+      <<: *python-env
+      DAGSTER_HOME: /data/dagster_home
+      DAGSTER_PG_URL: postgresql://mpm:${POSTGRES_PASSWORD:-mpm}@postgres:5432/mpm
+    ports:
+      - "${MPM_DAGSTER_PORT:-3000}:3000"
+    volumes:
+      - ./data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/python.Dockerfile
+    command: uvicorn mpm.api:app --host 0.0.0.0 --port 8000
+    environment: *python-env
+    volumes:
+      - ./data:/data:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8000/api/health"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/web.Dockerfile
+    ports:
+      - "${MPM_PORT:-8080}:80"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  pgdata:
