@@ -7,7 +7,7 @@ The rules, each of which exists because its absence has burned someone:
 * **Hash while streaming.** The sha256 lands in the stage manifest, so every
   downstream artifact is traceable to the exact bytes it came from.
 * **Verify pins.** If the registry pins a checksum and upstream serves
-  something else, fail loudly -- silently modelling on a revised compilation
+  something else, fail loudly -- silently modeling on a revised compilation
   is how two colleagues get different maps from "the same" pipeline.
 * **Retry with backoff.** Government data servers flake; a pipeline that dies
   on the first 503 at 2am is not a pipeline.

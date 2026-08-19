@@ -19,7 +19,7 @@ from pathlib import Path
 import pandas as pd
 
 from mpm.config import Config
-from mpm.ingest import clean_cube, summarise
+from mpm.ingest import clean_cube, summarize
 from mpm.pipeline import run_experiment
 from mpm.plots import capture_curves, feature_importance, prospectivity_map
 from mpm.report import build_report
@@ -41,7 +41,7 @@ def cmd_synth(args: argparse.Namespace) -> None:
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)
     df.to_parquet(args.out, index=False)
     log.info("wrote %s", args.out)
-    log.info("cube: %s", summarise(df))
+    log.info("cube: %s", summarize(df))
     log.info("hidden truth: %d true deposits, %d discovered",
                  int(df.truth_deposit.sum()), int(df.deposit.sum()))
 
@@ -56,14 +56,14 @@ def cmd_run(args: argparse.Namespace) -> None:
         drop_cols=cfg.drop_cols,
         max_missing_frac=cfg.max_missing_frac,
     )
-    log.info("cleaned cube: %s", summarise(clean, cfg.label_col))
+    log.info("cleaned cube: %s", summarize(clean, cfg.label_col))
     log.info("%d covariates after cleaning", len(features))
 
     result = run_experiment(clean, features, cfg)
     outdir = Path(args.out)
     outdir.mkdir(parents=True, exist_ok=True)
 
-    report = build_report(result, cfg, summarise(clean, cfg.label_col))
+    report = build_report(result, cfg, summarize(clean, cfg.label_col))
     for name, run in result["runs"].items():  # type: ignore[union-attr]
         run.scores.to_parquet(outdir / f"{name}_scores.parquet", index=False)
 

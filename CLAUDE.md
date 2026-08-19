@@ -8,7 +8,7 @@ A demonstration project (job application to KoBold Metals) for mineral
 prospectivity mapping: a staged ingest pipeline over open USGS data, a
 positive-unlabeled LightGBM model with spatial cross-validation, a FastAPI
 artifact server, and a React + deck.gl frontend. The project's identity is
-*honest evaluation* — much of the code exists to prevent three failure modes
+*honest evaluation*: much of the code exists to prevent three failure modes
 (PU labels treated as negatives, spatial CV leakage, exploration-effort bias),
 and the README/frontend prose documents those decisions deliberately. Keep
 that voice: docstrings explain *why*, and judgment calls are written down.
@@ -48,7 +48,7 @@ docker compose exec postgres psql -U mpm mpm -c 'select run_id, profile from cat
 Compose builds a **separate image tag per service** from the same Dockerfile:
 after changing Python code, rebuild `pipeline`, `api`, AND `dagster`
 (`docker compose build pipeline api dagster`). After recreating the `api`
-container, restart `web` too — nginx resolves the upstream IP at startup.
+container, restart `web` too; nginx resolves the upstream IP at startup.
 
 ## Architecture
 
@@ -60,11 +60,11 @@ container, restart `web` too — nginx resolves the upstream IP at startup.
   `stages.run_stage()`, which skips work when the stage's `manifest.json`
   fingerprint (upstream file sha256s + config slice + `ETL_VERSION`) is
   unchanged and all outputs exist. **Bump `ETL_VERSION` after any breaking
-  stage-logic change** — fingerprints only see inputs/config, not code.
+  stage-logic change**; fingerprints only see inputs/config, not code.
 - `src/mpm/orchestration/defs.py` wraps those same functions as Dagster
   assets (partitions = usgs profiles). Dagster decides *when* steps run; the
   manifests decide whether there is work. "Materialize all" is always cheap.
-  **Do not add `from __future__ import annotations` to defs.py** — stringified
+  **Do not add `from __future__ import annotations` to defs.py**; stringified
   annotations break Dagster's `context` parameter detection.
 
 Dataflow (usgs profiles; `synth` replaces the left side with a generator):
@@ -78,14 +78,14 @@ acquire ──┬─ labels ────┐
 
 Manifests store output paths **relative to the stage directory** so the same
 `./data` bind mount is fresh from host and container. Profiles (region,
-commodity, label rules, config overrides) live in `etl/profiles.py` — adding
+commodity, label rules, config overrides) live in `etl/profiles.py`; adding
 a commodity system is a new profile entry, not new pipeline code.
 
 ### The catalog (Postgres, optional everywhere)
 
 `src/mpm/db.py`: source registry (including user-registered extras), run
 index, per-cell scores. All tables live in the **`catalog` schema** because
-Dagster's own storage owns `public.runs` in the same database — never create
+Dagster's own storage owns `public.runs` in the same database; never create
 unqualified tables. Every function degrades gracefully without
 `DATABASE_URL` (file-mode fallback), which is why the test suite passes with
 or without postgres. Artifacts on the volume are the source of truth; the
@@ -101,33 +101,33 @@ the pipeline fetches whatever is registered. Two kinds: `xyz_grid`
 `etl/publish.py` writes immutable run dirs: `report.json` (metrics + audits +
 provenance), `cells.json.gz` (compact short-key per-cell payload the API
 serves pre-gzipped), `curves.json`, `importance.json`, `scores.parquet`, and
-a `latest.json` pointer. `mpm/api.py` is deliberately thin — if the frontend
+a `latest.json` pointer. `mpm/api.py` is deliberately thin; if the frontend
 needs new data, add it at publish time, not as API-side computation.
 
 ### Frontend
 
-`web/` — React + react-router; `pages/Dashboard.jsx` (deck.gl H3 map + SVG
+`web/`: React + react-router; `pages/Dashboard.jsx` (deck.gl H3 map + SVG
 charts, no chart library) plus prose pages (About/Research/Breakdown/
-Architecture — Breakdown pulls live numbers from the latest report). Colors
+Architecture; Breakdown pulls live numbers from the latest report). Colors
 come from CSS custom properties in `theme.css` (light + dark); sequential map
 ramps are percentile-binned and **reversed in dark mode**. The "top N%" view
 is an emphasis treatment (fade the tail), not per-hex outlines.
 
-## Modelling invariants (violating these produces plausible-but-wrong maps)
+## Modeling invariants (violating these produces plausible-but-wrong maps)
 
 - **Effort quarantine**: `DEFAULT_EFFORT_PATTERNS` in `config.py` is the
   arbiter of which covariates the headline (geology) model may see. Covariate
-  *naming* is therefore semantic — `sample_density_*`, `dist_to_deposit*`,
+  *naming* is therefore semantic: `sample_density_*`, `dist_to_deposit*`,
   `effort*`, and `_isna` suffixes route to the effort/audit model. Missingness
   indicators are effort by definition (survey extent).
 - **`dist_to_nearest_km` must stay leave-self-out** (`k=2` for positive
-  cells) — otherwise it is a copy of the label; a regression here once shipped
+  cells); otherwise it is a copy of the label; a regression here once shipped
   PR-AUC 1.000. `tests/test_etl.py` pins this.
 - Zero-vs-missing semantics: MRDS/sample-density counts fillna(0) (absence is
   information); measured covariates stay NaN for `clean_cube` imputation.
 - Headline metrics are pooled out-of-fold; per-fold stats are spread
   estimates only. Labels for `us-cu` are MRDS Producer/Past-Producer with
-  `prod_size ∈ {L, M}` — loosening this ~10×'s the positive count and changes
+  `prod_size ∈ {L, M}`; loosening this ~10×'s the positive count and changes
   what the label means; treat it as a documented judgment call.
 - Real-data cleaning traps already handled in `etl/readers.py`: NGDB censored
   values encoded as negative detection limits (substitute DL/2), ppm/pct
@@ -138,5 +138,5 @@ is an emphasis treatment (fade the tail), not per-hex outlines.
 
 `tests/` targets silent-failure paths (stage freshness, label leaks,
 quarantine routing, validation gates, API contract). New pipeline behavior
-should come with a test of its failure mode, not just its happy path —
+should come with a test of its failure mode, not just its happy path;
 that pattern is load-bearing for the project's credibility.

@@ -74,8 +74,8 @@ def points_to_cell_stats(
 
     Median, not mean: geochemical point data has fat tails, and one hot sample
     should move a cell, not own it. The sample count is returned under
-    ``count_name`` when asked for -- callers name it so that effort-flavoured
-    counts (sampling density) get names the quarantine list recognises.
+    ``count_name`` when asked for -- callers name it so that effort-flavored
+    counts (sampling density) get names the quarantine list recognizes.
     """
     work = df.copy()
     work["h3"] = assign_h3(work, res, lat_col, lon_col)

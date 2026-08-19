@@ -2,7 +2,7 @@
 
 A profile is everything the pipeline needs to go from nothing to a published
 run: which sources, which region, which commodity defines a positive, which
-grid resolution, and any overrides to the modelling config. Profiles are data,
+grid resolution, and any overrides to the modeling config. Profiles are data,
 not code -- adding a nickel cube is a new entry here, not a new pipeline.
 """
 
@@ -49,7 +49,7 @@ class Profile:
     synth_n_deposits: int = 400
     seed: int = 17
 
-    # -- modelling ----------------------------------------------------------
+    # -- modeling ----------------------------------------------------------
     config_overrides: dict[str, Any] = field(default_factory=dict)
     """Merged over mpm.config.Config defaults for the train stage."""
 

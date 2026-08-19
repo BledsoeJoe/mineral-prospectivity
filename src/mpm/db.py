@@ -192,7 +192,7 @@ def set_source_enabled(name: str, enabled: bool) -> None:
 
 
 def list_sources() -> list[dict[str, Any]]:
-    """All catalogued sources. File-mode fallback: the built-in registry."""
+    """All cataloged sources. File-mode fallback: the built-in registry."""
     if not available():
         return [
             {

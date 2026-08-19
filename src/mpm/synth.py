@@ -8,7 +8,7 @@ applaud it.
 
 Here the generator knows three things the model does not:
 
-* ``favourability`` -- the latent geological driver,
+* ``favorability`` -- the latent geological driver,
 * ``truth_deposit`` -- every deposit that exists, discovered or not,
 * ``detect_p``      -- the probability each one was ever recorded.
 
@@ -47,7 +47,7 @@ def _random_fourier_field(
 
 
 def _orthogonalise(v: np.ndarray, basis: list[np.ndarray]) -> np.ndarray:
-    """Residual of ``v`` after projecting out ``basis``, renormalised.
+    """Residual of ``v`` after projecting out ``basis``, renormalized.
 
     Needed because two "independent" smooth random fields over a domain only a
     few correlation lengths wide are not remotely independent -- with ~16
@@ -58,7 +58,7 @@ def _orthogonalise(v: np.ndarray, basis: list[np.ndarray]) -> np.ndarray:
 
     (That correlation is itself real: long-wavelength geophysical covariates
     over a single basin genuinely are collinear, which is why feature-importance
-    rankings in published prospectivity models deserve more scepticism than they
+    rankings in published prospectivity models deserve more skepticism than they
     usually get. Here it is removed so the test harness stays interpretable.)
     """
     out = v - v.mean()
@@ -76,7 +76,7 @@ def make_synthetic_cube(
     n_true_deposits: int = 400,
     seed: int = 17,
 ) -> pd.DataFrame:
-    """Build a labelled synthetic datacube.
+    """Build a labeled synthetic datacube.
 
     ``bbox`` is (lat_min, lon_min, lat_max, lon_max); the default covers a
     chunk of the US midcontinent purely so the coordinates look plausible.
@@ -111,18 +111,18 @@ def make_synthetic_cube(
     grav_gradient_mgal = 8.0 * np.abs(np.gradient(craton_field)) + 2.0 * field(120.0)
     moho_depth_km = 38.0 + 5.0 * field(340.0)
 
-    # ------------------------------------------------- latent favourability
+    # ------------------------------------------------- latent favorability
     # Deliberately non-additive: a basin only works if it is thick enough to
     # drive brine, carbonate enough to trap, and close enough to a crustal
     # discontinuity to plumb. Additive models should visibly underperform.
     thickness_window = np.exp(-((sed_thickness_km - 4.0) ** 2) / (2 * 1.1**2))
     edge_proximity = np.exp(-dist_craton_edge_km / 60.0)
     thermal = 1 / (1 + np.exp(0.25 * (heatflow_mwm2 - 62.0)))  # cool basins favoured
-    favourability = thickness_window * (0.35 + 0.65 * carbonate_frac) * edge_proximity * thermal
-    favourability = (favourability - favourability.min()) / np.ptp(favourability)
+    favorability = thickness_window * (0.35 + 0.65 * carbonate_frac) * edge_proximity * thermal
+    favorability = (favorability - favorability.min()) / np.ptp(favorability)
 
     # ------------------------------------------------------- true occurrences
-    weights = favourability**3
+    weights = favorability**3
     p_true = weights / weights.sum() * n_true_deposits
     truth_deposit = (rng.random(len(cells)) < np.clip(p_true, 0, 1)).astype(int)
 
@@ -147,7 +147,7 @@ def make_synthetic_cube(
     # ---------------------- covariates as *measured*: latent fields plus noise
     noise = lambda scale: rng.normal(0, scale, size=len(cells))
 
-    drivers = [sed_thickness_km, carbonate_frac, dist_craton_edge_km, heatflow_mwm2, favourability]
+    drivers = [sed_thickness_km, carbonate_frac, dist_craton_edge_km, heatflow_mwm2, favorability]
     decoy_smooth = _orthogonalise(field(200.0), drivers)
     decoy_rough = _orthogonalise(field(40.0), drivers)
 
@@ -174,10 +174,10 @@ def make_synthetic_cube(
         "sample_density": sample_density,
         # observable label
         "deposit": deposit,
-        # hidden ground truth -- dropped before modelling, used only to score
+        # hidden ground truth -- dropped before modeling, used only to score
         "truth_deposit": truth_deposit,
         "detect_p": detect_p,
-        "favourability": favourability,
+        "favorability": favorability,
     })
 
     df["dist_to_deposit_km"] = _distance_to_nearest(latlng, deposit == 1)
@@ -196,6 +196,6 @@ def _distance_to_nearest(latlng: np.ndarray, mask: np.ndarray) -> np.ndarray:
     if not mask.any():
         return np.full(len(latlng), np.nan)
     d = haversine_km(latlng, latlng[mask])
-    np.putmask(d, d <= 0, np.inf)  # ignore self-distance for labelled cells
+    np.putmask(d, d <= 0, np.inf)  # ignore self-distance for labeled cells
     out = d.min(axis=1)
     return np.where(np.isfinite(out), out, 0.0)

@@ -207,7 +207,7 @@ def cube(context: AssetExecutionContext) -> MaterializeResult:
 @asset(
     partitions_def=profile_partitions,
     deps=[cube],
-    group_name="modelling",
+    group_name="modeling",
     description=(
         "Spatially cross-validated PU experiment; publishes web artifacts and "
         "registers the run in the catalog."
@@ -244,7 +244,7 @@ def prospectivity_run(context: AssetExecutionContext) -> MaterializeResult:
 # self-sufficient; the raw assets exist for lineage and manual re-fetches.
 build_all_job = define_asset_job(
     "build_prospectivity",
-    selection=AssetSelection.groups("cube", "modelling"),
+    selection=AssetSelection.groups("cube", "modeling"),
     partitions_def=profile_partitions,
 )
 

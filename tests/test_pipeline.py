@@ -10,7 +10,7 @@ import pytest
 
 from mpm.config import Config
 from mpm.evaluate import capture_at, capture_auc, capture_curve, metrics, split_feature_groups
-from mpm.ingest import clean_cube, normalise_name, points_to_cells
+from mpm.ingest import clean_cube, normalize_name, points_to_cells
 from mpm.pu import PUBagger
 from mpm.splits import (
     buffered_train_mask,
@@ -70,7 +70,7 @@ def test_folds_are_balanced_in_area_and_positives(cube):
     assert (np.bincount(folds[y == 1], minlength=5) > 0).sum() >= 4
 
 
-def test_buffer_excludes_neighbours_of_test_fold(cube):
+def test_buffer_excludes_neighbors_of_test_fold(cube):
     cells = cube.h3.to_numpy()
     latlng = cell_latlng(cells)
     folds = spatial_block_folds(cells, cube.deposit.to_numpy(), 5, 3, seed=0)
@@ -146,8 +146,8 @@ def test_pu_bagger_separates_a_learnable_signal():
     X = rng.normal(size=(3000, 5))
     latent = X[:, 0] + X[:, 1] > 2.0
     s = np.zeros(3000, dtype=int)
-    labelled = np.flatnonzero(latent)[:40]  # only some positives are labelled
-    s[labelled] = 1
+    labeled = np.flatnonzero(latent)[:40]  # only some positives are labeled
+    s[labeled] = 1
 
     model = PUBagger(n_bags=10, seed=0, lgbm_params={"n_estimators": 60, "verbose": -1}).fit(X, s)
     pred = model.predict(X)
@@ -162,7 +162,7 @@ def test_pu_bagger_rejects_missing_classes():
         PUBagger(n_bags=2).fit(X, np.zeros(20, dtype=int))
 
 
-def test_feature_importance_is_normalised():
+def test_feature_importance_is_normalized():
     rng = np.random.default_rng(1)
     X = rng.normal(size=(600, 4))
     s = (X[:, 0] > 1.6).astype(int)
@@ -177,9 +177,9 @@ def test_feature_importance_is_normalised():
 # ------------------------------------------------------------------- ingest
 
 
-def test_normalise_name_folds_deposit_suffixes():
-    assert normalise_name("Red Dog Mine") == normalise_name("RED-DOG deposit")
-    assert normalise_name("Buick No. 2 Shaft") == "buick"
+def test_normalize_name_folds_deposit_suffixes():
+    assert normalize_name("Red Dog Mine") == normalize_name("RED-DOG deposit")
+    assert normalize_name("Buick No. 2 Shaft") == "buick"
 
 
 def test_points_to_cells_filters_dedupes_and_drops_null_island():
@@ -204,7 +204,7 @@ def test_clean_cube_drops_leakage_columns_and_sparse_covariates(cube):
     df["lithology"] = np.where(df.carbonate_frac > 0.5, "carbonate", "clastic")
 
     clean, features = clean_cube(df, drop_cols=Config().drop_cols)
-    assert "truth_deposit" not in features and "favourability" not in features
+    assert "truth_deposit" not in features and "favorability" not in features
     assert "lat" not in features and "lon" not in features
     assert "mostly_missing" not in features and "constant" not in features
     assert "lithology_carbonate" in features
@@ -234,5 +234,5 @@ def test_synthetic_cube_is_a_biased_pu_problem(cube):
     assert found < missed, "the bias engine is not producing biased discovery"
 
 
-def test_synthetic_deposits_track_latent_favourability(cube):
-    assert cube[cube.truth_deposit == 1].favourability.mean() > cube.favourability.mean() + 0.1
+def test_synthetic_deposits_track_latent_favorability(cube):
+    assert cube[cube.truth_deposit == 1].favorability.mean() > cube.favorability.mean() + 0.1

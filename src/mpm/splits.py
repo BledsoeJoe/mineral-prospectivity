@@ -1,9 +1,9 @@
 """Spatial cross-validation.
 
-Random k-fold CV on a geospatial grid is broken. Neighbouring cells share
+Random k-fold CV on a geospatial grid is broken. Neighboring cells share
 covariate values (geophysical grids are smooth, geology polygons span many
 cells), so a random split puts near-duplicates of every test cell in the
-training set. The model memorises location, the ROC-AUC comes out at 0.98, and
+training set. The model memorizes location, the ROC-AUC comes out at 0.98, and
 the map is worthless on ground you have not already drilled.
 
 This module implements the standard fix: group cells into spatial blocks, hold
@@ -94,7 +94,7 @@ def spatial_block_folds(
     Blocks are over-clustered into ``n_folds * region_oversample`` contiguous
     regions, then regions are greedily binned into folds by longest-processing-
     time: regions are placed heaviest-first, each into the fold that minimises
-    a *joint* cost over positive count and cell count, both normalised to their
+    a *joint* cost over positive count and cell count, both normalized to their
     per-fold targets.
 
     Balancing both dimensions matters. Balance on positives alone and every
@@ -124,7 +124,7 @@ def spatial_block_folds(
 
     # Longest-processing-time order: place the most awkward regions while there
     # is still slack to absorb them. "Heaviest" = whichever of the two
-    # normalised loads is larger.
+    # normalized loads is larger.
     order = np.argsort(-np.maximum(pos_per_region / pos_scale, n_per_region / n_scale))
 
     fold_pos = np.zeros(n_folds)

@@ -53,7 +53,7 @@ function SourcesManager() {
     <>
       {!dbUp && (
         <p className="form-note">
-          The catalog database is not connected — showing the built-in registry
+          The catalog database is not connected; showing the built-in registry
           read-only. Start the <code>postgres</code> service to add or toggle
           sources.
         </p>
@@ -101,10 +101,10 @@ function SourcesManager() {
       <h3>Register a new source</h3>
       <p className="form-note">
         Two kinds are understood: <code>xyz_grid</code> (headerless
-        lon/lat/value triples, optionally gzipped — the format of the USGS
+        lon/lat/value triples, optionally gzipped, the format of the USGS
         magnetic and gravity grids) and <code>ngdb_geochem</code> (an
         NGDB-style csv zip). Hosts are restricted to{' '}
-        {data.allowed_hosts.join(', ')} — the pipeline fetches these URLs, so
+        {data.allowed_hosts.join(', ')}; the pipeline fetches these URLs, so
         this is not an open proxy.{' '}
         <a href="#prefill" onClick={(e) => { e.preventDefault(); setForm(SOIL_EXAMPLE) }}>
           Prefill a working example (NGDB soil geochemistry) →
@@ -164,7 +164,7 @@ export default function Architecture() {
         <p className="lede">
           How raw government downloads become a scored map: a staged ingest
           pipeline with content-addressed caching, orchestrated by Dagster,
-          catalogued in Postgres, served as static artifacts.
+          cataloged in Postgres, served as static artifacts.
         </p>
 
         <h2>The services</h2>
@@ -259,7 +259,7 @@ export default function Architecture() {
           Every stage writes a manifest fingerprinting everything that could
           change its result: upstream file hashes, the relevant slice of
           profile config, a stage code version. Re-running the pipeline
-          recomputes exactly the stages whose fingerprints changed — a changed
+          recomputes exactly the stages whose fingerprints changed: a changed
           upstream file invalidates its dependents automatically, an unchanged
           pipeline is a fast no-op, and the whole data directory can move
           between host and container (paths are stored stage-relative). It is
@@ -270,9 +270,9 @@ export default function Architecture() {
         <p>
           The stage functions are orchestrator-free; Dagster wraps each one as
           an <b>asset</b> and contributes what a bare CLI cannot: the lineage
-          graph, partitioning (one partition per commodity profile —{' '}
+          graph, partitioning (one partition per commodity profile:{' '}
           <code>us-cu</code>, <code>us-znpb</code>), run history, retries, an
-          operational UI, and a weekly refresh schedule (off by default —
+          operational UI, and a weekly refresh schedule (off by default;
           USGS revises these compilations in place, and the manifests make a
           re-check cheap).
         </p>
@@ -307,7 +307,7 @@ export default function Architecture() {
             <tr>
               <td><code>run_cells</code></td>
               <td>
-                Per-cell scores for all three models, COPY-loaded — the
+                Per-cell scores for all three models, COPY-loaded: the
                 SQL-queryable view of every map ever published
                 (<code>select … from run_cells where run_id = … order by score desc</code>).
               </td>
@@ -319,7 +319,7 @@ export default function Architecture() {
           of record for the <i>catalog</i>; bulk artifacts (raw downloads,
           stage parquet, the pre-gzipped map payloads) stay on the volume. The
           catalog can always be rebuilt from the artifacts
-          (<code>mpm etl backfill-db</code>) — never the other way around.
+          (<code>mpm etl backfill-db</code>), never the other way around.
           Without a database the whole system degrades gracefully to
           file-only mode.
         </p>

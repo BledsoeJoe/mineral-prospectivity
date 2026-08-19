@@ -1,6 +1,6 @@
 import React from 'react'
 
-const pct = (v) => (Number.isFinite(v) ? `${(v * 100).toFixed(1)}%` : '—')
+const pct = (v) => (Number.isFinite(v) ? `${(v * 100).toFixed(1)}%` : '\u2013')
 
 export function OptimismCard({ optimism }) {
   return (
@@ -23,7 +23,7 @@ export function OptimismCard({ optimism }) {
         </tbody>
       </table>
       <div className="note">
-        Random k-fold lets the model memorise location: near-duplicates of every
+        Random k-fold lets the model memorize location: near-duplicates of every
         test cell sit in training. The spatial number is the one a drilling
         budget should believe.
       </div>
@@ -128,7 +128,7 @@ export function ProvenanceCard({ report }) {
             <td>{(cube.cells ?? 0).toLocaleString()}</td>
           </tr>
           <tr>
-            <td>labelled deposit cells</td>
+            <td>labeled deposit cells</td>
             <td>{(cube.positives ?? 0).toLocaleString()}</td>
           </tr>
           {prov.map((p) => (

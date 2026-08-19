@@ -24,7 +24,7 @@ export default function Research() {
         <h2>Positive-unlabeled learning</h2>
         <p>
           The founding problem: we have ~10² known deposits and ~10⁴–10⁶ cells,
-          and the cells without a deposit are <i>unlabeled</i>, not negative —
+          and the cells without a deposit are <i>unlabeled</i>, not negative;
           some of them host orebodies nobody has drilled. Treating them as
           negatives teaches the model that undiscovered deposits look like
           background.
@@ -52,7 +52,7 @@ export default function Research() {
         >
           <b>Applied in</b> <code>mpm/pu.py (c_hat)</code>. Their constant
           <code> c = P(labeled | y = 1)</code> is estimated on positives each
-          bag holds out — estimating it on training positives returns a
+          bag holds out; estimating it on training positives returns a
           meaningless ~1.0. Their theory assumes labels are missing at random
           (SCAR); exploration data violates that by construction, since
           discovery follows outcrop and road access. So <code>c_hat</code> is
@@ -63,7 +63,7 @@ export default function Research() {
         <h2>Spatial cross-validation</h2>
         <p>
           Geoscience grids are smooth, so a random train/test split puts
-          near-copies of every test cell into training and the model memorises
+          near-copies of every test cell into training and the model memorizes
           location. The dashboard&apos;s &quot;validation honesty&quot; panel
           exists to price that in.
         </p>
@@ -100,7 +100,7 @@ export default function Research() {
         <Paper
           title="Validation of spatial prediction models for landslide hazard mapping"
           authors="Chung & Fabbri (2003)"
-          venue="Natural Hazards 30 — the canonical prediction-rate curve reference"
+          venue="Natural Hazards 30, the canonical prediction-rate curve reference"
           href="https://scholar.google.com/scholar?q=%22Validation+of+spatial+prediction+models+for+landslide+hazard+mapping%22"
         >
           <b>Applied in</b> <code>mpm/evaluate.py (capture_curve)</code>. The
@@ -109,14 +109,14 @@ export default function Research() {
           what share of the known endowment do I capture?</i> H3 cells are
           near-equal-area, so &quot;top 5% of cells&quot; is &quot;top 5% of
           area&quot; for free. ROC-AUC is reported only for comparability with
-          the literature — at a 1-in-124 base rate it is dominated by how well
+          the literature; at a 1-in-124 base rate it is dominated by how well
           the model orders barren ground against itself.
         </Paper>
 
         <h2>The benchmark this imitates</h2>
 
         <Paper
-          title="Data-driven prospectivity modelling of sediment-hosted Zn–Pb mineral systems and their critical raw materials"
+          title="Data-driven prospectivity modeling of sediment-hosted Zn–Pb mineral systems and their critical raw materials"
           authors="Lawley et al. (2022)"
           venue="Ore Geology Reviews 141:104635"
           href="https://doi.org/10.1016/j.oregeorev.2021.104635"
@@ -128,7 +128,7 @@ export default function Research() {
           <a href="https://doi.org/10.4095/329203" target="_blank" rel="noreferrer">
             doi:10.4095/329203
           </a>) is directly loadable via <code>scripts/prepare_cube.py</code>.
-          Their honest numbers — PR-AUC in the few-percent range — are the
+          Their honest numbers (PR-AUC in the few-percent range) are the
           calibration for what &quot;good&quot; looks like here; published
           models reporting 0.99 AUC are usually reporting leakage.
         </Paper>
@@ -142,8 +142,8 @@ export default function Research() {
           <b>Applied in</b> <code>mpm/pu.py (informed negatives)</code>. Their
           likely-negative undersampling: a first-pass model scores the
           unlabeled pool, and pseudo-negatives are then drawn preferentially
-          from cells that pass judged <i>unlike</i> the positives — the
-          tabular analogue of their masked-autoencoder scheme. Also the
+          from cells the first pass judges <i>unlike</i> the positives, the
+          tabular analog of their masked-autoencoder scheme. Also the
           modern reference point for PU + spatial CV + effort separation used
           together.
         </Paper>

@@ -1,10 +1,10 @@
 # Mineral prospectivity mapping, done honestly
 
 An end-to-end system that ranks ground by its chance of hosting an undiscovered
-mineral deposit — and, more to the point, a set of controls for the three ways
+mineral deposit, and, more to the point, a set of controls for the three ways
 this task quietly goes wrong.
 
-The modelling here is deliberately unexciting: gradient-boosted trees on a
+The modeling here is deliberately unexciting: gradient-boosted trees on a
 hexagonal grid. The interesting work is everything around it. A naive version of
 this project reports ROC-AUC of 0.98 and produces a map that is worthless on any
 ground you have not already drilled. This one reports 0.95 and explains the
@@ -12,7 +12,7 @@ difference.
 
 Five services, one compose file:
 
-- **`mpm etl` + Dagster** — a structured ingest pipeline that *acquires* open
+- **`mpm etl` + Dagster**: a structured ingest pipeline that *acquires* open
   USGS data (checksummed, cached, retried), *validates* it through
   data-quality gates, *cleans* it (censored geochemistry, BOM'd headers, Null
   Island coordinates, free-text commodity fields), assembles an H3 datacube,
@@ -21,19 +21,19 @@ Five services, one compose file:
   The stage functions are orchestrator-free; Dagster wraps them as a
   partitioned asset graph (lineage, run history, a weekly refresh schedule,
   UI on :3000).
-- **Postgres** — the catalog: the data-source registry (including sources
+- **Postgres**, the catalog: the data-source registry (including sources
   registered at runtime through the UI), the run index, per-cell scores in
   queryable form, and Dagster's own storage. Bulk artifacts stay on the
   volume; the catalog can always be rebuilt from them (`mpm etl backfill-db`).
-- **`mpm.api`** — a thin FastAPI service over the published artifacts plus
+- **`mpm.api`**: a thin FastAPI service over the published artifacts plus
   source management endpoints (host-allowlisted; the pipeline fetches what
   you register).
-- **`web/`** — a React + deck.gl app: the map (prospectivity, uncertainty,
+- **`web/`**: a React + deck.gl app: the map (prospectivity, uncertainty,
   CV folds, top-N% shortlist), plus About / Research / Breakdown /
   Architecture pages that explain what everything means, where the ideas come
   from, and how the system fits together. The Architecture page includes the
   live source catalog: register a new USGS grid or NGDB-style geochem zip
-  there and the next materialization folds it into the cube — no code change.
+  there and the next materialization folds it into the cube with no code change.
 
 ```bash
 docker compose up --build         # synth profile -> web :8080, dagster :3000
@@ -58,7 +58,7 @@ You have ~10² known deposits and ~10⁶ cells. The other cells are **unlabeled*
 not negative. A cell with no recorded deposit is either barren or hosting an
 orebody under 400 m of cover that nobody has drilled. Train a standard
 classifier that treats them as negatives and you teach it that undiscovered
-deposits look like background — precisely the class of cell you are trying to
+deposits look like background, precisely the class of cell you are trying to
 find.
 
 This is a positive-unlabeled (PU) problem. `mpm/pu.py` implements:
@@ -70,23 +70,23 @@ This is a positive-unlabeled (PU) problem. `mpm/pu.py` implements:
   uncertainty estimate.
 - **Informed negative sampling.** A first pass scores the unlabeled pool; the
   second pass draws pseudo-negatives preferentially from cells the first pass
-  finds *unlike* the positives. Tabular analogue of the undersampling scheme in
+  finds *unlike* the positives. Tabular analog of the undersampling scheme in
   GFM4MPM (Mohammadi et al. 2024).
 - **The Elkan–Noto constant** `c = P(labeled | y=1)`, estimated on positives
-  each bag holds out. Estimating it on training positives — my first attempt —
+  each bag holds out. Estimating it on training positives (my first attempt)
   returns a meaningless 0.995, because a bag trained on every positive
-  recognises every positive.
+  recognizes every positive.
 
 One caveat stated plainly in the code: Elkan–Noto assumes SCAR (labeled
 positives selected completely at random). Exploration data violates that by
-construction — discovery depends on outcrop, road access and historic land
+construction: discovery depends on outcrop, road access and historic land
 tenure. So `c_hat` is a diagnostic, not a calibration guarantee. Problem 3 is
 what that violation costs you.
 
 ### 2. Random k-fold cross-validation leaks
 
 Geophysical grids are smooth and geology polygons span many cells, so a random
-split puts near-duplicates of every test cell into training. The model memorises
+split puts near-duplicates of every test cell into training. The model memorizes
 location.
 
 `mpm/splits.py` holds out contiguous **spatial blocks** (H3 parents at
@@ -131,13 +131,13 @@ effort_importance_share           0.787   <- effort takes 79% of model importanc
 
 `outcrop_frac` is the judgment call worth defending in conversation. Exposure is
 a genuine geological property, but in this system it only affects *detection*,
-not *formation* — so it belongs in the effort group. Real cubes are full of
+not *formation*, so it belongs in the effort group. Real cubes are full of
 covariates that sit on that line.
 
 **The synthetic cube.** This is why `mpm/synth.py` exists. On real data you can
 only validate against *discovered* deposits, so a road-proximity detector scores
 brilliantly and nothing catches it. The generator knows three things the model
-does not: latent favourability, every deposit that exists, and the probability
+does not: latent favorability, every deposit that exists, and the probability
 each was ever recorded. Deposits are found only where a biased detection process
 (accessible, outcropping, well-sampled ground) reached them.
 
@@ -174,7 +174,7 @@ a model that never saw it. With ~20 positives per fold, a per-fold mean of
 capture@5% is mostly sampling noise; per-fold spread is reported separately as a
 stability estimate, not a point estimate.
 
-Covariate importance recovers the generative structure — the four causal drivers
+Covariate importance recovers the generative structure: the four causal drivers
 on top, the three decoys at the bottom:
 
 ```
@@ -198,7 +198,7 @@ distinction away.
 ## Why these metrics
 
 ROC-AUC is the default in the MPM literature and is close to useless at a
-1-in-250 base rate — it is dominated by how well the model orders the barren
+1-in-250 base rate; it is dominated by how well the model orders the barren
 majority against itself. Reported here only for comparability, and to show how
 little it moves under a leak.
 
@@ -241,7 +241,7 @@ dagster dev -f src/mpm/orchestration/defs.py
 `extras` are sources registered at runtime in the Postgres catalog (via the
 web UI's Architecture page or `POST /api/sources`): additional `xyz_grid`
 files or NGDB-style `ngdb_geochem` zips from allowlisted hosts. The covariate
-name you give a source decides which side of the bias audit it lands on — the
+name you give a source decides which side of the bias audit it lands on; the
 quarantine list is the arbiter, visibly.
 
 The `us-cu` profile builds a conterminous-US copper cube from scratch, from
@@ -275,7 +275,7 @@ On that real cube, the honest headline is capture@5% = 0.42 (geology only,
 spatial CV, top drivers: Bouguer gravity, Cu/Zn/As stream-sediment
 geochemistry). The bias audit then shows what contamination buys: add effort
 proxies and capture jumps to 0.78 with 82% of model importance sitting on
-effort covariates — a model that would send every drill rig to ground the
+effort covariates: a model that would send every drill rig to ground the
 industry already knows.
 
 ## The web app
@@ -284,8 +284,8 @@ industry already knows.
 and nginx serving the built React app (proxying `/api`).
 
 - **Map**: score surface (percentile-binned sequential ramp), ensemble
-  disagreement, and the spatial CV blocks; known deposits and — on the
-  synthetic profile — the undiscovered ones the model has never seen. The
+  disagreement, and the spatial CV blocks; known deposits and, on the
+  synthetic profile, the undiscovered ones the model has never seen. The
   "top N%" slider is the drill-shortlist view: everything else fades out.
 - **Panels**: pooled metrics, capture curves with the 5% operating point,
   the exploration-bias audit, validation-honesty (spatial vs random CV), the
@@ -299,7 +299,7 @@ the pipeline's schema.
 
 **Recommended: the Lawley et al. datacube.** H3-indexed covariates and labels
 for MVT and clastic-dominated Zn-Pb deposits across the US, Canada and
-Australia — geophysics, lithospheric structure, geology, geochronology, already
+Australia: geophysics, lithospheric structure, geology, geochronology, already
 joined onto a resolution-7 grid. It is also a *published benchmark*, so your
 number has something to sit next to.
 
@@ -320,14 +320,14 @@ python -m mpm run --cube data/mvt_cube.parquet --config configs/default.yaml --o
 **Harder path, more engineering to show:** build the cube yourself from
 [USGS MRDS](https://mrdata.usgs.gov/mrds/) occurrences plus
 [SGMC geology](https://doi.org/10.3133/ds1052). `mpm/ingest.py` handles the part
-that actually bites — occurrence databases are compilations of compilations, so
-the same orebody appears under three names with coordinates a kilometre apart,
+that actually bites: occurrence databases are compilations of compilations, so
+the same orebody appears under three names with coordinates a kilometer apart,
 commodity fields are free text, and "occurrence" spans a producing mine to a
-roadside malachite stain. Deduplication runs in two stages (normalised name
+roadside malachite stain. Deduplication runs in two stages (normalized name
 within a cell, then cell) because the cell is the unit of prediction and
 double-counting silently upweights well-endowed districts.
 
-Those labelling decisions move the result more than the choice of classifier
+Those labeling decisions move the result more than the choice of classifier
 does.
 
 ---
@@ -369,17 +369,17 @@ configs/         every knob that changes a result
 Tests target the places where a bug produces a *plausible-looking but wrong*
 map: fold leakage, buffer distances, capture-curve arithmetic, label dedup,
 whether the simulator's bias engine is actually biased. Two examples of that
-paying off during development —
+paying off during development:
 
 - The first fold-balancer starved a fold to 75 of 27,460 cells. Deposits cluster
   into districts, so balancing on positives alone dumps every zero-positive
-  region into one bin. Fixed with LPT ordering on a joint normalised cost.
+  region into one bin. Fixed with LPT ordering on a joint normalized cost.
 - A decoy covariate initially ranked as the top predictor. Over a 1000 km domain
   with 250 km wavelengths there are only ~16 effective degrees of freedom, so
   "independent" smooth fields correlate at 0.67 by chance. The decoys are now
   orthogonalised against the drivers. That collinearity is real in actual
   potential-field data, which is a good reason to treat feature-importance
-  rankings in published prospectivity models with more scepticism than they
+  rankings in published prospectivity models with more skepticism than they
   usually get.
 
 ## Known limits

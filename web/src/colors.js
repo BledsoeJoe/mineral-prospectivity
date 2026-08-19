@@ -16,9 +16,9 @@ export const ORANGE_RAMP = [
 
 // Spatial CV folds are region identity; 5 large contiguous blocks. This is
 // past the strict 3-series all-pairs cap, accepted deliberately: the blocks
-// are huge and labelled in the tooltip, so precise hue decoding is never
+// are huge and labeled in the tooltip, so precise hue decoding is never
 // required. Slots 1, 2, 7, 4, 5 -- skips the aqua/green pair, which is the
-// one confusable neighbourhood on a map where any two folds can touch.
+// one confusable neighborhood on a map where any two folds can touch.
 export const FOLD_COLORS = ['#2a78d6', '#eb6834', '#4a3aa7', '#eda100', '#e87ba4']
 
 export const INK = [11, 11, 11]

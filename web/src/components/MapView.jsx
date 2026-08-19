@@ -169,8 +169,8 @@ export default function MapView({ cells, hasTruth }) {
       className: 'deck-tooltip',
       html: `
         <div style="font-weight:600">${object.h}</div>
-        <div>score ${object.s?.toFixed(4) ?? '—'} · P${pct}</div>
-        <div>ensemble spread ${object.u?.toFixed(4) ?? '—'}</div>
+        <div>score ${object.s?.toFixed(4) ?? '\u2013'} · P${pct}</div>
+        <div>ensemble spread ${object.u?.toFixed(4) ?? '\u2013'}</div>
         <div>fold ${object.f}${object.y ? ' · <b>known deposit</b>' : ''}</div>`,
     }
   }

@@ -74,8 +74,8 @@ def capture_curves(runs: dict[str, pd.DataFrame], path: Path, label_col: str = "
         at5 = np.interp(0.05, area, cap)
         ax.plot(area, cap, lw=2, color=colors.get(name), label=f"{name} (capture@5% = {at5:.2f})")
 
-    ax.plot([0, 1], [0, 1], ls="--", c="grey", lw=1, label="random ranking")
-    ax.axvline(0.05, ls=":", c="grey", lw=1)
+    ax.plot([0, 1], [0, 1], ls="--", c="gray", lw=1, label="random ranking")
+    ax.axvline(0.05, ls=":", c="gray", lw=1)
     ax.set_xlabel("fraction of area accepted (H3 cells are equal-area)")
     ax.set_ylabel("fraction of known deposits captured")
     ax.set_title("Capture curves")
@@ -97,7 +97,7 @@ def feature_importance(importance: dict[str, float], path: Path, top: int = 14) 
 
     fig, ax = plt.subplots(figsize=(8, 0.42 * len(items) + 1.6), constrained_layout=True)
     ax.barh(names, vals, color=PALETTE["spatial"])
-    ax.set_xlabel("mean split gain (normalised)")
+    ax.set_xlabel("mean split gain (normalized)")
     ax.set_title("Covariate importance")
     ax.grid(axis="x", alpha=0.25)
 

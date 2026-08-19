@@ -40,14 +40,14 @@ from mpm.etl.acquire import AcquiredFile, acquire
 from mpm.etl.profiles import PROFILES, Profile
 from mpm.etl.publish import publish_run
 from mpm.etl.stages import StageContext, StageOutcome, run_stage
-from mpm.ingest import attach_labels, clean_cube, points_to_cells, summarise
+from mpm.ingest import attach_labels, clean_cube, points_to_cells, summarize
 from mpm.pipeline import run_experiment
 from mpm.report import build_report
 from mpm.synth import make_synthetic_cube
 
 log = logging.getLogger("mpm.etl")
 
-ETL_VERSION = "2"
+ETL_VERSION = "3"
 """Bump to invalidate every stage manifest after a breaking logic change."""
 
 
@@ -155,7 +155,7 @@ def stage_cube_synth(profile: Profile, root: Path, force: bool) -> StageOutcome:
         path = ctx.dir / "cube.parquet"
         df.to_parquet(path, index=False)
         ctx.add_output("cube", path, rows=len(df))
-        ctx.meta["summary"] = summarise(df)
+        ctx.meta["summary"] = summarize(df)
         ctx.meta["hidden_truth"] = {
             "n_true_deposits": int(df["truth_deposit"].sum()),
             "n_discovered": int(df["deposit"].sum()),
@@ -194,11 +194,11 @@ def stage_labels(
         )
         if profile.prod_sizes:
             deposits = deposits[deposits["prod_size"].isin(profile.prod_sizes)]
-        labelled = points_to_cells(
+        labeled = points_to_cells(
             deposits, resolution=profile.h3_res, lat_col="latitude", lon_col="longitude",
             name_col="site_name",
         )
-        validate.check_labels(labelled, "labels", min_positives=30).raise_if_failed()
+        validate.check_labels(labeled, "labels", min_positives=30).raise_if_failed()
 
         # Everything MRDS knows about, any commodity, any status: a direct map
         # of historical exploration attention. Named so the quarantine list
@@ -209,8 +209,8 @@ def stage_labels(
         )
 
         p1 = ctx.dir / "labels.parquet"
-        labelled.to_parquet(p1, index=False)
-        ctx.add_output("labels", p1, rows=len(labelled))
+        labeled.to_parquet(p1, index=False)
+        ctx.add_output("labels", p1, rows=len(labeled))
         p2 = ctx.dir / "effort.parquet"
         effort.to_parquet(p2, index=False)
         ctx.add_output("effort", p2, rows=len(effort))
@@ -218,8 +218,8 @@ def stage_labels(
             "mrds_records_in_bbox": len(mrds),
             "commodity_matches": len(target),
             "deposit_sites": len(deposits),
-            "labelled_cells": len(labelled),
-            "qa": validate.check_labels(labelled, "labels").to_dict(),
+            "labeled_cells": len(labeled),
+            "qa": validate.check_labels(labeled, "labels").to_dict(),
         })
 
     return run_stage("labels", root / "labels", fingerprint, build, force)
@@ -398,8 +398,8 @@ def stage_cube_usgs(
         # anything there), not a gap in coverage -- so 0, not imputed median.
         cube["effort_mrds_density"] = cube["effort_mrds_density"].fillna(0.0)
 
-        labelled = pd.read_parquet(labels_out.output_path("labels"))
-        cube = attach_labels(cube, labelled)
+        labeled = pd.read_parquet(labels_out.output_path("labels"))
+        cube = attach_labels(cube, labeled)
 
         centroids = gridding.cell_centroids(cube["h3"])
         cube = cube.merge(centroids, on="h3", how="left")
@@ -416,21 +416,21 @@ def stage_cube_usgs(
         path = ctx.dir / "cube.parquet"
         cube.to_parquet(path, index=False)
         ctx.add_output("cube", path, rows=len(cube))
-        ctx.meta["summary"] = summarise(cube)
+        ctx.meta["summary"] = summarize(cube)
         ctx.meta["columns"] = list(cube.columns)
 
     return run_stage("cube", root / "cube", fingerprint, build, force)
 
 
 def _dist_to_nearest_km(cube: pd.DataFrame, positives: pd.DataFrame) -> np.ndarray:
-    """Great-circle distance from each cell to its nearest *other* labelled cell.
+    """Great-circle distance from each cell to its nearest *other* labeled cell.
 
     The strongest effort proxy there is: models trained on it reproduce the
     existing deposit map almost perfectly and discover nothing. Included so the
     bias audit has a worst offender to catch, and named to match the
     quarantine list -- it must never reach the geology model.
 
-    Leave-self-out matters: a labelled cell's distance to the nearest deposit
+    Leave-self-out matters: a labeled cell's distance to the nearest deposit
     is otherwise zero by construction, which turns this column into a copy of
     the label and the audit model into a perfect-scoring fraud. (Found the hard
     way: the first cube shipped PR-AUC 1.000 on the combined model.)
@@ -440,7 +440,7 @@ def _dist_to_nearest_km(cube: pd.DataFrame, positives: pd.DataFrame) -> np.ndarr
     tree = BallTree(np.radians(positives[["lat", "lon"]].to_numpy()), metric="haversine")
     d, _ = tree.query(np.radians(cube[["lat", "lon"]].to_numpy()), k=2)
     is_pos = cube["deposit"].to_numpy() == 1
-    # Positives: nearest neighbour is themselves at ~0 km; take the second.
+    # Positives: nearest neighbor is themselves at ~0 km; take the second.
     nearest = np.where(is_pos, d[:, 1], d[:, 0])
     return nearest * 6371.0
 
@@ -468,7 +468,7 @@ def stage_train_publish(
             df, cell_col=cfg.cell_col, label_col=cfg.label_col,
             drop_cols=cfg.drop_cols, max_missing_frac=cfg.max_missing_frac,
         )
-        summary = summarise(clean, cfg.label_col)
+        summary = summarize(clean, cfg.label_col)
         log.info("cleaned cube: %s / %d covariates", summary, len(features))
 
         result = run_experiment(clean, features, cfg)

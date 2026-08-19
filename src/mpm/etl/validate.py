@@ -118,7 +118,7 @@ def check_labels(labels: pd.DataFrame, subject: str, min_positives: int = 30) ->
     r.add(
         "min_positive_cells",
         n >= min_positives,
-        f"{n} labelled cells (need >= {min_positives}; widen the commodity filter, "
+        f"{n} labeled cells (need >= {min_positives}; widen the commodity filter, "
         "relax dev_stat, or coarsen the grid)",
     )
     return r

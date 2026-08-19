@@ -17,7 +17,7 @@ Two mitigations are implemented here:
 
 2. **Informed negative sampling.** A first-pass model scores the unlabeled
    pool; the second pass draws its pseudo-negatives preferentially from cells
-   the first pass considers unlike the positives. This is the tabular analogue
+   the first pass considers unlike the positives. This is the tabular analog
    of the undersampling scheme in GFM4MPM (Mohammadi et al., 2024).
 
 Also implemented: the Elkan & Noto (2008) constant ``c = P(labeled | y=1)``,
@@ -118,7 +118,7 @@ class PUBagger:
 
         Each bag also holds out a slice of the positives (``pos_holdout``) so
         that :meth:`_estimate_c` has out-of-sample positives to work with. A bag
-        trained on every positive will recognise every positive, which is how
+        trained on every positive will recognize every positive, which is how
         you get a meaningless c_hat of 0.99.
 
         Returns (model, in-bag unlabeled idx, held-out positive idx) triples.
@@ -203,7 +203,7 @@ class PUBagger:
         )
 
     def feature_importance(self) -> dict[str, float]:
-        """Mean split-gain importance across bags, normalised to sum to 1."""
+        """Mean split-gain importance across bags, normalized to sum to 1."""
         gains = np.mean([m.booster_.feature_importance("gain") for m, _, _ in self.models_], axis=0)
         total = gains.sum() or 1.0
         names = self.feature_names_ or [f"f{i}" for i in range(len(gains))]

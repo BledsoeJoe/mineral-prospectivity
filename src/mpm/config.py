@@ -14,7 +14,7 @@ from typing import Any
 import yaml
 
 # Feature-name substrings that mark a covariate as a proxy for *where people
-# have looked* rather than *where rocks are favourable*. Anything matching these
+# have looked* rather than *where rocks are favorable*. Anything matching these
 # is quarantined into the "effort" group and excluded from the honest model.
 # See docs in README: exploration bias is the central threat to validity in MPM.
 DEFAULT_EFFORT_PATTERNS: tuple[str, ...] = (
@@ -86,7 +86,7 @@ class SplitConfig:
     block_res: int = 3
     """H3 resolution used to aggregate cells into CV blocks. Coarser (smaller
     number) == larger blocks == harder, more honest evaluation. At res 3 a block
-    averages ~12,400 km2; the modelling cells at res 7 average ~5.2 km2."""
+    averages ~12,400 km2; the modeling cells at res 7 average ~5.2 km2."""
 
     region_oversample: int = 20
     """Cluster blocks into n_folds * region_oversample contiguous regions before
@@ -109,7 +109,7 @@ class Config:
     cell_col: str = "h3"
     label_col: str = "deposit"
 
-    drop_cols: tuple[str, ...] = ("lat", "lon", "truth_deposit", "detect_p", "favourability")
+    drop_cols: tuple[str, ...] = ("lat", "lon", "truth_deposit", "detect_p", "favorability")
     """Columns present in the cube that must never be used as covariates.
     `truth_deposit` etc. only exist in the synthetic cube (they are the hidden
     ground truth) and would be catastrophic leakage."""

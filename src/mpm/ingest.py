@@ -10,9 +10,9 @@ Two entry points:
 
 The point-file path is where most of the real work is. Mineral occurrence
 databases are compilations of compilations: the same orebody appears under
-three names with coordinates that disagree by a kilometre, commodity fields are
+three names with coordinates that disagree by a kilometer, commodity fields are
 free text, and "occurrence" covers everything from a producing mine to a
-roadside stain of malachite. Every one of those is a labelling decision that
+roadside stain of malachite. Every one of those is a labeling decision that
 moves the model more than the choice of classifier does.
 """
 
@@ -40,7 +40,7 @@ def points_to_cells(
     Deduplication is intentionally two-stage:
 
     1. **By name within a cell.** The same deposit listed twice in one cell is
-       one deposit. Names are normalised (case, punctuation, mine/deposit
+       one deposit. Names are normalized (case, punctuation, mine/deposit
        suffixes) before comparison.
     2. **By cell.** Two genuinely distinct orebodies in the same 5 km cell
        still produce one positive label, because the cell is the unit of
@@ -68,7 +68,7 @@ def points_to_cells(
     ]
 
     if name_col and name_col in df.columns:
-        df["_key"] = df[name_col].astype(str).map(normalise_name)
+        df["_key"] = df[name_col].astype(str).map(normalize_name)
         df = df.drop_duplicates(subset=["h3", "_key"])
 
     return (
@@ -83,7 +83,7 @@ _SUFFIXES = re.compile(
 )
 
 
-def normalise_name(name: str) -> str:
+def normalize_name(name: str) -> str:
     """Fold a deposit name to a comparison key."""
     s = name.lower().strip()
     s = _SUFFIXES.sub(" ", s)
@@ -93,12 +93,12 @@ def normalise_name(name: str) -> str:
 
 def attach_labels(
     cube: pd.DataFrame,
-    labelled_cells: pd.DataFrame,
+    labeled_cells: pd.DataFrame,
     cell_col: str = "h3",
     label_col: str = "deposit",
 ) -> pd.DataFrame:
     """Left-join point-derived labels onto the covariate cube."""
-    out = cube.merge(labelled_cells[[cell_col]].assign(**{label_col: 1}), on=cell_col, how="left")
+    out = cube.merge(labeled_cells[[cell_col]].assign(**{label_col: 1}), on=cell_col, how="left")
     out[label_col] = out[label_col].fillna(0).astype(int)
     return out
 
@@ -150,7 +150,7 @@ def clean_cube(
                 onehot_frames.append(dummies)
 
     out = df[[cell_col, label_col] + [c for c in ("lat", "lon") if c in df.columns]].copy()
-    for c in ("truth_deposit", "detect_p", "favourability"):
+    for c in ("truth_deposit", "detect_p", "favorability"):
         if c in df.columns:
             out[c] = df[c]
 
@@ -166,11 +166,11 @@ def clean_cube(
     clean = pd.concat(blocks, axis=1)
 
     features = [c for c in clean.columns if c not in reserved and c not in {"lat", "lon"}]
-    features = [c for c in features if c not in {"truth_deposit", "detect_p", "favourability"}]
+    features = [c for c in features if c not in {"truth_deposit", "detect_p", "favorability"}]
     return clean, features
 
 
-def summarise(df: pd.DataFrame, label_col: str = "deposit") -> dict[str, float]:
+def summarize(df: pd.DataFrame, label_col: str = "deposit") -> dict[str, float]:
     """Quick shape/imbalance summary for logging."""
     n = len(df)
     pos = int(df[label_col].sum())

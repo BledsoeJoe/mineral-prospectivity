@@ -59,7 +59,7 @@ def run_cv(
     spatial: bool = True,
 ) -> RunResult:
     """Cross-validated PU run. Every cell is scored exactly once, by a model
-    that never saw it or its buffered neighbourhood."""
+    that never saw it or its buffered neighborhood."""
     cells = df[cfg.cell_col].to_numpy()
     y = df[cfg.label_col].to_numpy().astype(int)
     X = df[features].to_numpy(dtype=float)
@@ -131,7 +131,7 @@ def run_cv(
         "calibrated": calibrated,
         cfg.label_col: y,
     })
-    for extra in ("lat", "lon", "truth_deposit", "favourability"):
+    for extra in ("lat", "lon", "truth_deposit", "favorability"):
         if extra in df.columns:
             scores[extra] = df[extra].to_numpy()
 

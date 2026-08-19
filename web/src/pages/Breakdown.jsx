@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react'
 import { fetchProfiles, fetchReport } from '../api.js'
 
-const pct = (v, d = 1) => (Number.isFinite(v) ? `${(v * 100).toFixed(d)}%` : '—')
-const num = (v, d = 3) => (Number.isFinite(v) ? v.toFixed(d) : '—')
+const pct = (v, d = 1) => (Number.isFinite(v) ? `${(v * 100).toFixed(d)}%` : '\u2013')
+const num = (v, d = 3) => (Number.isFinite(v) ? v.toFixed(d) : '\u2013')
 
 function Live({ children }) {
   return <span className="metric-inline">{children}</span>
@@ -34,7 +34,7 @@ export default function Breakdown() {
       <div className="prose">
         <h1>What you are looking at</h1>
         <p className="lede">
-          A plain-language guide to every number on the map page — and why the
+          A plain-language guide to every number on the map page, and why the
           obvious ways of computing them give wrong answers.
         </p>
 
@@ -56,11 +56,11 @@ export default function Breakdown() {
           cell of roughly equal area. The current cube has{' '}
           <Live>{(cube.cells ?? 0).toLocaleString()}</Live> cells, of which{' '}
           <Live>{(cube.positives ?? 0).toLocaleString()}</Live> host a known
-          deposit — a base rate of about{' '}
-          <Live>1 in {cube.base_rate ? Math.round(1 / cube.base_rate) : '—'}</Live>.
+          deposit, a base rate of about{' '}
+          <Live>1 in {cube.base_rate ? Math.round(1 / cube.base_rate) : '\u2013'}</Live>.
           The model&apos;s job is to rank all of them so that the deposits pile
           up at the top of the ranking. Deposits are rare, spatially clustered,
-          and — crucially — <i>known deposits are only the ones somebody
+          and, crucially, <i>known deposits are only the ones somebody
           already found</i>. Each of those three facts breaks a standard ML
           workflow in its own way; the three audits on the map page each
           correspond to one of them.
@@ -73,7 +73,7 @@ export default function Breakdown() {
           sample of unlabeled cells temporarily treated as barren. A
           cell&apos;s score is the ensemble&apos;s average vote that it looks
           deposit-like. The map colors by <b>percentile</b> of that score
-          (raw values are tiny and log-skewed — coloring them linearly would
+          (raw values are tiny and log-skewed; coloring them linearly would
           paint the whole country in the two palest steps).
         </p>
         <p>
@@ -100,7 +100,7 @@ export default function Breakdown() {
               <td><b>lift@5%</b></td>
               <td><Live>{num(g['lift@5%'], 1)}×</Live></td>
               <td>
-                capture@5% divided by 0.05 — how much better than throwing
+                capture@5% divided by 0.05: how much better than throwing
                 darts. Random ranking scores 1×.
               </td>
             </tr>
@@ -111,7 +111,7 @@ export default function Breakdown() {
                 Area under the precision-recall curve; the right summary
                 statistic under extreme class imbalance. Published prospectivity
                 studies with honest validation report values in the low
-                percents — small numbers here are normal, not broken.
+                percents, so small numbers here are normal, not broken.
               </td>
             </tr>
             <tr>
@@ -122,16 +122,16 @@ export default function Breakdown() {
                 {cube.base_rate ? Math.round(1 / cube.base_rate) : '…'} base
                 rate it is dominated by how well the model orders barren cells
                 against other barren cells, and it barely moves when validation
-                leaks — which is exactly why it flatters.
+                leaks, which is exactly why it flatters.
               </td>
             </tr>
             <tr>
               <td><b>± across folds</b></td>
-              <td>—</td>
+              <td>\u2013</td>
               <td>
                 Headline metrics are pooled over out-of-fold predictions (every
                 cell scored by a model that never saw it). The per-fold spread
-                is shown separately as a stability estimate — with only a few
+                is shown separately as a stability estimate; with only a few
                 dozen positives per fold, per-fold means are mostly noise.
               </td>
             </tr>
@@ -140,9 +140,9 @@ export default function Breakdown() {
               <td><Live>{num(report?.geology?.c_hat)}</Live></td>
               <td>
                 Elkan &amp; Noto&apos;s P(labeled | deposit), estimated on
-                held-out positives. A diagnostic of how recognisable the
-                labelled deposits are to the model — <i>not</i> the true
-                discovery rate, because deposit labelling is anything but
+                held-out positives. A diagnostic of how recognizable the
+                labeled deposits are to the model, <i>not</i> the true
+                discovery rate, because deposit labeling is anything but
                 random.
               </td>
             </tr>
@@ -151,7 +151,7 @@ export default function Breakdown() {
 
         <h2>Failure mode #1: absence is not evidence of absence</h2>
         <p>
-          Cells without a known deposit are unlabeled, not barren — some hide
+          Cells without a known deposit are unlabeled, not barren; some hide
           orebodies under cover. Train a standard classifier on them as
           negatives and it learns that undiscovered deposits look like
           background, which is precisely the class of cell exploration wants.
@@ -163,16 +163,16 @@ export default function Breakdown() {
         <p>
           Geophysical surfaces are smooth and geology is contiguous, so a
           random train/test split puts near-duplicates of every test cell into
-          training; the model memorises location and the score inflates. The
-          fix is <b>spatial block CV</b> — the &quot;CV folds&quot; layer on
-          the map shows the actual held-out regions — plus a buffer that drops
+          training; the model memorizes location and the score inflates. The
+          fix is <b>spatial block CV</b> (the &quot;CV folds&quot; layer on
+          the map shows the actual held-out regions), plus a buffer that drops
           training cells within tens of km of any test cell.
         </p>
         <p>
           The dashboard runs the leaky protocol side-by-side to price it:
           spatial CV scores <Live>{pct(opt['spatial_cv_capture@5%'])}</Live>{' '}
           capture@5% and random k-fold says{' '}
-          <Live>{pct(opt['random_cv_capture@5%'])}</Live> — the difference,{' '}
+          <Live>{pct(opt['random_cv_capture@5%'])}</Live>; the difference,{' '}
           <Live>{pct(opt.capture_inflation)}</Live>, is optimism manufactured
           purely by the split. Note how little ROC-AUC moves under the same
           leak ({num(opt.spatial_cv_roc_auc)} → {num(opt.random_cv_roc_auc)}):
@@ -183,8 +183,8 @@ export default function Breakdown() {
         <p>
           Known deposits cluster near roads, outcrop and historic mining
           districts. Give a model covariates that encode <i>where people have
-          looked</i> — occurrence density, distance to the nearest known
-          deposit, geochemical sampling density — and it becomes a
+          looked</i> (occurrence density, distance to the nearest known
+          deposit, geochemical sampling density) and it becomes a
           where-have-people-looked detector: it validates brilliantly against
           known deposits and sends every drill rig to ground the industry
           already knows.
@@ -196,8 +196,8 @@ export default function Breakdown() {
           <Live>{pct(bias['geology_only_capture@5%'])}</Live> at 5% area; the
           contaminated one captures <Live>{pct(bias['with_effort_capture@5%'])}</Live>,
           with <Live>{pct(bias.effort_importance_share)}</Live> of its
-          importance sitting on effort covariates. That gap —{' '}
-          <Live>{pct(bias.effort_gain)}</Live> — is not extra skill. It is the
+          importance sitting on effort covariates. That gap of{' '}
+          <Live>{pct(bias.effort_gain)}</Live> is not extra skill. It is the
           model rediscovering exploration history.
         </p>
         {disc && (
@@ -213,7 +213,7 @@ export default function Breakdown() {
               geology-only model captures{' '}
               <Live>{pct(disc['known_capture@5%'])}</Live> of known and{' '}
               <Live>{pct(disc['undiscovered_capture@5%'])}</Live> of
-              undiscovered deposits in its top 5% — ranking deposits it was
+              undiscovered deposits in its top 5%. Ranking deposits it was
               never shown as well as ones it was is the whole point of the
               quarantine, and it is unmeasurable without a simulator.
             </p>
@@ -254,7 +254,7 @@ export default function Breakdown() {
               <td><i>quarantined:</i> <code>effort_mrds_density</code>, <code>dist_to_deposit_km</code>, <code>sample_density_*</code>, <code>*_isna</code></td>
               <td>Exploration attention: record density, distance to known deposits, sampling coverage, survey gaps</td>
               <td>
-                They &quot;find copper&quot; extremely well — by finding
+                They &quot;find copper&quot; extremely well, by finding
                 geologists. Which is why the headline model never sees them.
               </td>
             </tr>
@@ -268,10 +268,10 @@ export default function Breakdown() {
           recorded production size <b>Large or Medium</b>. Loosen that to
           &quot;any copper occurrence&quot; and the label set balloons ~50×
           with roadside showings; the label stops meaning <i>orebody</i>.
-          Two caveats stand: a cell is a cell — a world-class deposit and a
-          modest one count the same — and byproduct producers (a lead mine
+          Two caveats stand: a cell is a cell (a world-class deposit and a
+          modest one count the same), and byproduct producers (a lead mine
           with copper credits) count as copper. Both are label-definition
-          decisions that move results more than any modelling choice, which is
+          decisions that move results more than any modeling choice, which is
           why they are documented rather than buried.
         </p>
 
@@ -279,7 +279,7 @@ export default function Breakdown() {
           If one sentence survives from this page: <b>the top-5% shortlist on
           the map captures {pct(bias['geology_only_capture@5%'])} of known
           large/medium copper producers using only public geophysics and
-          geochemistry — and the audits around that number are what make it
+          geochemistry, and the audits around that number are what make it
           worth believing.</b>
         </div>
       </div>

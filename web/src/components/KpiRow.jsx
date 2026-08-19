@@ -10,8 +10,8 @@ function Tile({ label, value, detail }) {
   )
 }
 
-const fmt = (v, d = 3) => (Number.isFinite(v) ? v.toFixed(d) : '—')
-const pct = (v) => (Number.isFinite(v) ? `${(v * 100).toFixed(1)}%` : '—')
+const fmt = (v, d = 3) => (Number.isFinite(v) ? v.toFixed(d) : '\u2013')
+const pct = (v) => (Number.isFinite(v) ? `${(v * 100).toFixed(1)}%` : '\u2013')
 
 export default function KpiRow({ report }) {
   const pooled = report.geology?.pooled ?? {}
@@ -37,7 +37,7 @@ export default function KpiRow({ report }) {
         <Tile label="PR-AUC" value={fmt(pooled.pr_auc)} detail={`ROC-AUC ${fmt(pooled.roc_auc)}`} />
         <Tile
           label="Base rate"
-          value={baseRate ? `1 in ${Math.round(1 / baseRate).toLocaleString()}` : '—'}
+          value={baseRate ? `1 in ${Math.round(1 / baseRate).toLocaleString()}` : '\u2013'}
           detail="cells hosting a known deposit"
         />
         <Tile

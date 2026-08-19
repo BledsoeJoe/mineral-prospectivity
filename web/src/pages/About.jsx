@@ -7,7 +7,7 @@ export default function About() {
         <h1>About this project</h1>
         <p className="lede">
           An exploratory, heavily AI-assisted study of how machine learning
-          meets mineral exploration data — built to learn the domain, and to
+          meets mineral exploration data, built to learn the domain and to
           show how I work.
         </p>
 
@@ -22,7 +22,7 @@ export default function About() {
           the results legible.
         </p>
         <p>
-          The center of gravity is deliberately <i>not</i> the model — it is
+          The center of gravity is deliberately <i>not</i> the model: it is
           gradient-boosted trees, the most boring reasonable choice. The work
           is in everything around it: where the data comes from, what has to
           be true for a validation number to mean anything, and the three ways
@@ -46,10 +46,10 @@ export default function About() {
           definition is; whether a covariate belongs on the geology side or the
           effort side of the audit; whether a validation number is believable
           or a leak (one release of this pipeline scored a perfect PR-AUC of
-          1.000 — catching <i>why</i> was the actual work); when the AI&apos;s
+          1.000, and catching <i>why</i> was the actual work); when the AI&apos;s
           confident first draft was wrong. Working effectively with these tools
-          — steering them toward production-shaped software, auditing what they
-          produce, knowing what to distrust — is, I think, now part of the
+          (steering them toward production-shaped software, auditing what they
+          produce, knowing what to distrust) is, I think, now part of the
           craft, and this project is an honest sample of mine.
         </p>
 
@@ -84,11 +84,11 @@ export default function About() {
             filtered-magnetic products join the cube, not just XYZ exports.
           </li>
           <li>
-            Strike-aware CV buffering — geological continuity follows
+            Strike-aware CV buffering: geological continuity follows
             structure, not circles.
           </li>
           <li>
-            A proper labelling review with a geologist. The MRDS
+            A proper labeling review with a geologist. The MRDS
             <code> prod_size ∈ {'{'}L, M{'}'}</code> filter is a defensible
             proxy for &quot;real orebody&quot;, but it is a proxy, and it is
             exactly the kind of decision that should not be made by a software

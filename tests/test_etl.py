@@ -116,7 +116,7 @@ def test_grid_to_cells_mean_and_std():
 
 
 def test_dist_to_nearest_is_leave_self_out():
-    """A labelled cell's distance must be to the nearest OTHER deposit, never
+    """A labeled cell's distance must be to the nearest OTHER deposit, never
     0-to-itself -- otherwise the column is the label in disguise."""
     cube = pd.DataFrame({
         "lat": [40.0, 41.0, 42.0], "lon": [-100.0, -100.0, -100.0],
