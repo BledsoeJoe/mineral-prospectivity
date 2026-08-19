@@ -1,0 +1,27 @@
+# Every knob that changes a result. Reproduce a run from (this file, seed, cube).
+seed: 17
+cell_col: h3
+label_col: deposit
+max_missing_frac: 0.5
+
+split:
+  n_folds: 5
+  block_res: 3          # H3 res 3 blocks ~ 12,400 km2 each
+  region_oversample: 20
+  buffer_km: 50.0       # drop training cells within 50 km of the held-out region
+
+model:
+  n_bags: 25
+  neg_ratio: 1.0
+  informed_negatives: true
+  informed_alpha: 2.0
+  lgbm_params:
+    n_estimators: 300
+    learning_rate: 0.05
+    num_leaves: 15
+    min_child_samples: 5
+    subsample: 0.8
+    subsample_freq: 1
+    colsample_bytree: 0.7
+    reg_lambda: 1.0
+    verbose: -1
