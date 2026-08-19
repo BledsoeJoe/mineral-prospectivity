@@ -84,3 +84,37 @@ NGDB_SEDIMENT = Source(
 REGISTRY: dict[str, Source] = {
     s.name: s for s in (MRDS, MAGNETIC, GRAVITY_ISOSTATIC, GRAVITY_BOUGUER, NGDB_SEDIMENT)
 }
+
+
+# Curated, verified additions for the catalog: each of these has been
+# downloaded and parsed end-to-end against the current readers, so the
+# "register a source" UI can offer them with a straight face. Kept separate
+# from REGISTRY: these are opt-in, not part of every cube.
+SUGGESTED_SOURCES: tuple[dict, ...] = (
+    {
+        "name": "ngdb_soil",
+        "url": "https://mrdata.usgs.gov/ngdb/soil/ngdbsoil-csv.zip",
+        "kind": "ngdb_geochem",
+        "value_name": "soil",
+        "size_mb": 61,
+        "description": (
+            "NGDB soil geochemistry: same schema as the stream-sediment media, "
+            "different sampling medium. Soil samples respond to bedrock through "
+            "residual cover where drainages are sparse."
+        ),
+        "citation": "USGS National Geochemical Database, https://mrdata.usgs.gov/ngdb/soil/",
+    },
+    {
+        "name": "ngdb_concentrate",
+        "url": "https://mrdata.usgs.gov/ngdb/concentrate/ngdbconc-csv.zip",
+        "kind": "ngdb_geochem",
+        "value_name": "conc",
+        "size_mb": 55,
+        "description": (
+            "NGDB heavy-mineral concentrates: panned stream-sediment fractions. "
+            "Concentrating the dense minerals amplifies ore-element signals that "
+            "whole-sediment chemistry dilutes away."
+        ),
+        "citation": "USGS National Geochemical Database, https://mrdata.usgs.gov/ngdb/concentrate/",
+    },
+)

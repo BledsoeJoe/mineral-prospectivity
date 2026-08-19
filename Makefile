@@ -25,7 +25,7 @@ all: synth run
 
 # ---- docker compose stack ----------------------------------------------
 
-up:                 ## synth pipeline + api + web on :8080
+up:                 ## full stack on 127.0.0.1:8080 (dagster UI at /dagster/)
 	docker compose up --build -d
 
 up-real:            ## real-data US copper cube

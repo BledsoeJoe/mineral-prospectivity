@@ -150,11 +150,17 @@ class SourceToggle(BaseModel):
 
 @app.get("/api/sources")
 def sources() -> dict:
+    from mpm.etl.sources import SUGGESTED_SOURCES
+
+    registered = db.list_sources()
+    taken = {s["name"] for s in registered}
     return {
         "catalog_db": db.available(),
         "allowed_hosts": list(db.allowed_hosts()),
         "kinds": list(db.EXTRA_KINDS),
-        "sources": db.list_sources(),
+        "sources": registered,
+        # Curated, verified-parseable additions not yet in the catalog.
+        "suggestions": [s for s in SUGGESTED_SOURCES if s["name"] not in taken],
     }
 
 
@@ -185,6 +191,42 @@ def toggle_source(name: str, body: SourceToggle) -> dict:
     except KeyError:
         raise HTTPException(404, f"source {name!r} not found") from None
     return {"name": name, "enabled": body.enabled}
+
+
+# -------------------------------------------------------------- orchestration
+
+
+class MaterializeIn(BaseModel):
+    profile: str = Field(pattern=r"^[a-z][a-z0-9-]{1,40}$")
+
+
+@app.post("/api/materialize", status_code=202)
+def materialize(body: MaterializeIn) -> dict:
+    """Launch a Dagster run that rebuilds one profile's cube and republishes.
+
+    Goes through Dagster's GraphQL API rather than running the pipeline here:
+    the run gets lineage, logs and history in the Dagster UI, and this
+    container keeps its read-only mount. Stage manifests make the run cheap
+    when nothing actually changed.
+    """
+    from mpm.etl.profiles import PROFILES
+    from mpm.orchestration import client
+
+    profile = PROFILES.get(body.profile)
+    if profile is None or profile.kind != "usgs":
+        usgs = sorted(p.name for p in PROFILES.values() if p.kind == "usgs")
+        raise HTTPException(422, f"profile must be one of {usgs}")
+    try:
+        run_id = client.launch_partition(body.profile)
+    except client.DagsterUnavailable as e:
+        raise HTTPException(503, str(e)) from e
+    except client.LaunchFailed as e:
+        raise HTTPException(502, f"dagster refused the launch: {e}") from e
+    return {
+        "run_id": run_id,
+        "profile": body.profile,
+        "watch_url": f"/dagster/runs/{run_id}",
+    }
 
 
 # ------------------------------------------------------------------ map data

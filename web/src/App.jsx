@@ -7,7 +7,6 @@ import Breakdown from './pages/Breakdown.jsx'
 import Architecture from './pages/Architecture.jsx'
 
 function Nav() {
-  const dagsterUrl = `//${window.location.hostname}:3000`
   return (
     <header className="topbar">
       <h1>Mineral prospectivity</h1>
@@ -17,7 +16,8 @@ function Nav() {
         <NavLink to="/research">Research</NavLink>
         <NavLink to="/architecture">Architecture</NavLink>
         <NavLink to="/about">About</NavLink>
-        <a href={dagsterUrl} target="_blank" rel="noreferrer" className="ext">
+        {/* served by this app's nginx, so it sits behind the same auth */}
+        <a href="/dagster/" target="_blank" rel="noreferrer" className="ext">
           Dagster ↗
         </a>
       </nav>

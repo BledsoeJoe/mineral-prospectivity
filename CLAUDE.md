@@ -22,7 +22,7 @@ Docker compose is the canonical environment (the local `.venv` may lack dev
 deps; `lightgbm` needs the `libgomp1` system package).
 
 ```bash
-docker compose up --build                    # postgres + pipeline(synth) + dagster + api + web(:8080)
+docker compose up --build                    # postgres + pipeline(synth) + dagster + api + web (127.0.0.1:8080; dagster UI at /dagster/)
 MPM_PROFILE=us-cu docker compose up --build  # real-data US copper profile
 
 # tests + lint (run inside the image; postgres-backed tests skip without DATABASE_URL)
@@ -94,7 +94,12 @@ catalog is always rebuildable from them (`backfill-db`), never the reverse.
 User-added sources (`POST /api/sources`, or the frontend Architecture page)
 are host-allowlisted (`MPM_SOURCE_HOSTS`, default mrdata.usgs.gov) because
 the pipeline fetches whatever is registered. Two kinds: `xyz_grid`
-(lon/lat/value triples) and `ngdb_geochem` (NGDB-style csv zips).
+(lon/lat/value triples) and `ngdb_geochem` (NGDB-style csv zips). Curated
+suggestions live in `sources.SUGGESTED_SOURCES`; only add entries there after
+verifying the file downloads and parses with the current readers.
+`POST /api/materialize {profile}` launches a single-partition Dagster run via
+GraphQL (`orchestration/client.py`, `MPM_DAGSTER_URL`); the API container
+never runs the pipeline itself (its volume is read-only).
 
 ### Publish contract with the frontend
 

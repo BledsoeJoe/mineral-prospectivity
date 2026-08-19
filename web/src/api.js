@@ -22,6 +22,17 @@ export async function postSource(body) {
   return data
 }
 
+export async function postMaterialize(profile) {
+  const res = await fetch('/api/materialize', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ profile }),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`)
+  return data
+}
+
 export async function toggleSource(name, enabled) {
   const res = await fetch(`/api/sources/${name}`, {
     method: 'PATCH',

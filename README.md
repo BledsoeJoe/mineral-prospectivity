@@ -10,6 +10,12 @@ this project reports ROC-AUC of 0.98 and produces a map that is worthless on any
 ground you have not already drilled. This one reports 0.95 and explains the
 difference.
 
+> **Provenance:** this is an exploratory project, built in a few working
+> sessions with heavy assistance from an AI coding agent (Anthropic's Claude).
+> The direction, the judgment calls (label definitions, covariate quarantine,
+> what counts as a leak), and the verification are mine; most of the
+> line-by-line code is not. The app's About page carries the full version.
+
 Five services, one compose file:
 
 - **`mpm etl` + Dagster**: a structured ingest pipeline that *acquires* open
@@ -20,7 +26,7 @@ Five services, one compose file:
   writes a manifest; reruns recompute exactly the stages whose inputs changed.
   The stage functions are orchestrator-free; Dagster wraps them as a
   partitioned asset graph (lineage, run history, a weekly refresh schedule,
-  UI on :3000).
+  UI proxied at /dagster/).
 - **Postgres**, the catalog: the data-source registry (including sources
   registered at runtime through the UI), the run index, per-cell scores in
   queryable form, and Dagster's own storage. Bulk artifacts stay on the
@@ -32,11 +38,21 @@ Five services, one compose file:
   CV folds, top-N% shortlist), plus About / Research / Breakdown /
   Architecture pages that explain what everything means, where the ideas come
   from, and how the system fits together. The Architecture page includes the
-  live source catalog: register a new USGS grid or NGDB-style geochem zip
-  there and the next materialization folds it into the cube with no code change.
+  live source catalog: pick from curated, verified-parseable USGS additions
+  (soil and heavy-mineral-concentrate geochemistry) or register a custom
+  grid/geochem URL, then click "Materialize in Dagster". That button launches
+  a real Dagster run through its GraphQL API (`POST /api/materialize`), so
+  the rebuild shows up in the Dagster UI with lineage and logs, and the new
+  source is in the next cube with no code change.
+
+The stack publishes exactly one port, bound to loopback: `127.0.0.1:8080`.
+Deploying behind a host-level reverse proxy is therefore just "proxy the
+subdomain to localhost:8080"; the Dagster UI rides along at `/dagster/` on
+the same origin, behind the same TLS and auth, with no separate port open.
+(Set `MPM_BIND=0.0.0.0` only if you genuinely want the port exposed.)
 
 ```bash
-docker compose up --build         # synth profile -> web :8080, dagster :3000
+docker compose up --build         # synth profile -> 127.0.0.1:8080 (dagster at /dagster/)
 MPM_PROFILE=us-cu docker compose up --build   # real-data US copper cube
 
 # or, without docker:

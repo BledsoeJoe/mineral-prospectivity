@@ -1,20 +1,16 @@
 import React, { useEffect, useState } from 'react'
-import { fetchSources, postSource, toggleSource } from '../api.js'
+import { fetchSources, postMaterialize, postSource, toggleSource } from '../api.js'
 
-const SOIL_EXAMPLE = {
-  name: 'ngdb_soil',
-  url: 'https://mrdata.usgs.gov/ngdb/soil/ngdbsoil-csv.zip',
-  kind: 'ngdb_geochem',
-  value_name: 'soil',
-  description: 'NGDB soil geochemistry: same schema as the sediment media, different sampling medium.',
-  citation: 'USGS National Geochemical Database, https://mrdata.usgs.gov/ngdb/soil/',
-}
+const USGS_PROFILES = ['us-cu', 'us-znpb']
 
 function SourcesManager() {
   const [data, setData] = useState(null)
   const [form, setForm] = useState({ name: '', url: '', kind: 'xyz_grid', value_name: '', description: '' })
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState(null) // {ok, text}
+  const [justAdded, setJustAdded] = useState(false)
+  const [profile, setProfile] = useState(USGS_PROFILES[0])
+  const [launch, setLaunch] = useState(null) // {state, text, url}
 
   const reload = () => fetchSources().then(setData).catch(() => setData({ error: true }))
   useEffect(() => { reload() }, [])
@@ -24,19 +20,39 @@ function SourcesManager() {
 
   const dbUp = data.catalog_db
 
-  const submit = async (e) => {
-    e.preventDefault()
+  const addBody = async (body) => {
     setBusy(true)
     setMsg(null)
     try {
-      const res = await postSource(form)
-      setMsg({ ok: true, text: `Added ${res.name}. ${res.note}.` })
-      setForm({ name: '', url: '', kind: 'xyz_grid', value_name: '', description: '' })
+      const res = await postSource(body)
+      setMsg({ ok: true, text: `Added ${res.name} to the catalog.` })
+      setJustAdded(true)
       reload()
     } catch (err) {
       setMsg({ ok: false, text: err.message })
     } finally {
       setBusy(false)
+    }
+  }
+
+  const submit = async (e) => {
+    e.preventDefault()
+    await addBody(form)
+    setForm({ name: '', url: '', kind: 'xyz_grid', value_name: '', description: '' })
+  }
+
+  const materialize = async () => {
+    setLaunch({ state: 'launching', text: `Launching ${profile}…` })
+    try {
+      const res = await postMaterialize(profile)
+      setLaunch({
+        state: 'running',
+        text: `Run ${res.run_id.slice(0, 8)} launched for ${profile}.`,
+        url: res.watch_url,
+      })
+      setJustAdded(false)
+    } catch (err) {
+      setLaunch({ state: 'error', text: err.message })
     }
   }
 
@@ -98,60 +114,143 @@ function SourcesManager() {
         </tbody>
       </table>
 
-      <h3>Register a new source</h3>
+      <h3>Add a source</h3>
+      {data.suggestions.length > 0 ? (
+        <>
+          <p className="form-note">
+            Curated additions, each verified to download and parse against the
+            current readers:
+          </p>
+          {data.suggestions.map((s) => (
+            <div className="paper" key={s.name}>
+              <div className="p-title">
+                {s.name}
+                <span className="badge" style={{ marginLeft: 8 }}>{s.kind}</span>
+                <span className="form-note" style={{ marginLeft: 8 }}>{s.size_mb} MB</span>
+              </div>
+              <div className="p-venue">
+                <a href={s.url} target="_blank" rel="noreferrer">{s.url}</a>
+              </div>
+              <div className="p-how">{s.description}</div>
+              <div style={{ marginTop: 10 }}>
+                <button
+                  className="primary-btn"
+                  disabled={!dbUp || busy}
+                  onClick={() => addBody({
+                    name: s.name, url: s.url, kind: s.kind,
+                    value_name: s.value_name, description: s.description,
+                    citation: s.citation,
+                  })}
+                >
+                  {busy ? 'Adding…' : 'Add to catalog'}
+                </button>
+              </div>
+            </div>
+          ))}
+        </>
+      ) : (
+        <p className="form-note">
+          Every curated source is already in the catalog. Custom sources can
+          still be registered below.
+        </p>
+      )}
+      {msg && <p className={msg.ok ? 'form-ok' : 'form-error'}>{msg.text}</p>}
+
+      <details style={{ marginTop: 12 }}>
+        <summary className="form-note" style={{ cursor: 'pointer' }}>
+          Advanced: register a custom source by URL
+        </summary>
+        <p className="form-note" style={{ marginTop: 8 }}>
+          Two kinds are understood: <code>xyz_grid</code> (headerless
+          lon/lat/value triples, optionally gzipped, the format of the USGS
+          magnetic and gravity grids) and <code>ngdb_geochem</code> (an
+          NGDB-style csv zip). Hosts are restricted to{' '}
+          {data.allowed_hosts.join(', ')}; the pipeline fetches these URLs, so
+          this is not an open proxy.
+        </p>
+        <form className="source-form" onSubmit={submit}>
+          <label>
+            name
+            <input value={form.name} required pattern="[a-z][a-z0-9_]{2,40}"
+              onChange={(e) => setForm({ ...form, name: e.target.value })} />
+          </label>
+          <label>
+            kind
+            <select value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value })}>
+              {data.kinds.map((k) => <option key={k}>{k}</option>)}
+            </select>
+          </label>
+          <label className="full">
+            url
+            <input value={form.url} required type="url"
+              onChange={(e) => setForm({ ...form, url: e.target.value })} />
+          </label>
+          <label>
+            {form.kind === 'xyz_grid' ? 'covariate name' : 'column prefix'}
+            <input value={form.value_name} required pattern="[a-z][a-z0-9_]{2,40}"
+              onChange={(e) => setForm({ ...form, value_name: e.target.value })} />
+          </label>
+          <label>
+            description
+            <input value={form.description}
+              onChange={(e) => setForm({ ...form, description: e.target.value })} />
+          </label>
+          <div className="actions">
+            <button className="primary-btn" disabled={!dbUp || busy} type="submit">
+              {busy ? 'Adding…' : 'Add source'}
+            </button>
+          </div>
+        </form>
+        <p className="form-note">
+          Naming is not cosmetic: the covariate name decides which side of the
+          exploration-bias audit a source lands on. Name a column
+          <code> sample_density_soil</code> and the quarantine list routes it to
+          the effort model; name it <code>soil</code> and its element columns
+          join the geology model. Whoever adds a source makes that call,
+          visibly.
+        </p>
+      </details>
+
+      <h3>Rebuild the cube</h3>
       <p className="form-note">
-        Two kinds are understood: <code>xyz_grid</code> (headerless
-        lon/lat/value triples, optionally gzipped, the format of the USGS
-        magnetic and gravity grids) and <code>ngdb_geochem</code> (an
-        NGDB-style csv zip). Hosts are restricted to{' '}
-        {data.allowed_hosts.join(', ')}; the pipeline fetches these URLs, so
-        this is not an open proxy.{' '}
-        <a href="#prefill" onClick={(e) => { e.preventDefault(); setForm(SOIL_EXAMPLE) }}>
-          Prefill a working example (NGDB soil geochemistry) →
-        </a>
+        {justAdded
+          ? 'The catalog changed. Materialize to fold the new source into the next cube:'
+          : 'Launches a real Dagster run (visible in its UI, with lineage and '
+            + 'logs). Stage manifests keep it cheap when nothing changed.'}
       </p>
-      <form className="source-form" onSubmit={submit}>
-        <label>
-          name
-          <input value={form.name} required pattern="[a-z][a-z0-9_]{2,40}"
-            onChange={(e) => setForm({ ...form, name: e.target.value })} />
-        </label>
-        <label>
-          kind
-          <select value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value })}>
-            {data.kinds.map((k) => <option key={k}>{k}</option>)}
-          </select>
-        </label>
-        <label className="full">
-          url
-          <input value={form.url} required type="url"
-            onChange={(e) => setForm({ ...form, url: e.target.value })} />
-        </label>
-        <label>
-          {form.kind === 'xyz_grid' ? 'covariate name' : 'column prefix'}
-          <input value={form.value_name} required pattern="[a-z][a-z0-9_]{2,40}"
-            onChange={(e) => setForm({ ...form, value_name: e.target.value })} />
-        </label>
-        <label>
-          description
-          <input value={form.description}
-            onChange={(e) => setForm({ ...form, description: e.target.value })} />
-        </label>
-        <div className="actions">
-          <button className="primary-btn" disabled={!dbUp || busy} type="submit">
-            {busy ? 'Adding…' : 'Add source'}
-          </button>
-          {msg && <span className={msg.ok ? 'form-ok' : 'form-error'}>{msg.text}</span>}
-        </div>
-      </form>
-      <p className="form-note">
-        Naming is not cosmetic: the covariate name decides which side of the
-        exploration-bias audit a source lands on. Name a column
-        <code> sample_density_soil</code> and the quarantine list routes it to
-        the effort model; name it <code>soil</code> and its element columns
-        join the geology model. Whoever adds a source makes that call,
-        visibly.
-      </p>
+      <div className="actions" style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+        <select
+          value={profile}
+          onChange={(e) => setProfile(e.target.value)}
+          style={{
+            font: 'inherit', fontSize: 13, padding: '6px 8px', borderRadius: 6,
+            border: '1px solid var(--border)', background: 'var(--page)',
+            color: 'var(--text-primary)',
+          }}
+        >
+          {USGS_PROFILES.map((p) => <option key={p}>{p}</option>)}
+        </select>
+        <button
+          className="primary-btn"
+          disabled={launch?.state === 'launching'}
+          onClick={materialize}
+        >
+          {launch?.state === 'launching' ? 'Launching…' : 'Materialize in Dagster'}
+        </button>
+        {launch && launch.state !== 'launching' && (
+          <span className={launch.state === 'error' ? 'form-error' : 'form-ok'}>
+            {launch.text}
+            {launch.url && (
+              <>
+                {' '}
+                <a href={launch.url} target="_blank" rel="noreferrer">
+                  watch the run ↗
+                </a>
+              </>
+            )}
+          </span>
+        )}
+      </div>
     </>
   )
 }
@@ -171,13 +270,13 @@ export default function Architecture() {
         <div className="diagram">
           <div className="box"><div className="b-title">postgres</div><div className="b-sub">source catalog · run index · cell scores · Dagster storage</div></div>
           <div className="arrow">⇄</div>
-          <div className="box"><div className="b-title">dagster</div><div className="b-sub">asset graph, partitions, schedule · :3000</div></div>
+          <div className="box"><div className="b-title">dagster</div><div className="b-sub">asset graph, partitions, schedule · /dagster/</div></div>
           <div className="arrow">→</div>
           <div className="box"><div className="b-title">./data volume</div><div className="b-sub">raw cache · stage parquet · published runs</div></div>
           <div className="arrow">→</div>
           <div className="box"><div className="b-title">api</div><div className="b-sub">FastAPI, read-only over artifacts + catalog</div></div>
           <div className="arrow">→</div>
-          <div className="box"><div className="b-title">web</div><div className="b-sub">nginx + this React app · :8080</div></div>
+          <div className="box"><div className="b-title">web</div><div className="b-sub">nginx + this React app · 127.0.0.1:8080</div></div>
         </div>
         <p>
           One <code>docker compose up</code> starts everything. A one-shot{' '}
@@ -282,10 +381,10 @@ export default function Architecture() {
           has any work to do. &quot;Materialize all&quot; is therefore always
           safe. Instance storage (run history, event logs) lives in the same
           Postgres as the catalog, so CLI materializations and the webserver
-          share one history. Open the graph at{' '}
-          <a href={`//${window.location.hostname}:3000`} target="_blank" rel="noreferrer">
-            the Dagster UI ↗
-          </a>.
+          share one history. The UI is served by this app&apos;s own nginx at{' '}
+          <a href="/dagster/" target="_blank" rel="noreferrer">/dagster/ ↗</a>,
+          so it lives on the same origin and behind the same access control as
+          everything else; no separate port is exposed.
         </p>
 
         <h2>Postgres: the catalog</h2>

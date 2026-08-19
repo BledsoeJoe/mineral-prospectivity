@@ -90,3 +90,27 @@ def test_add_source_shape_validation(client: TestClient):
         "name": "Bad Name!", "url": "x", "kind": "shapefile", "value_name": "v",
     })
     assert res.status_code == 422
+
+
+def test_sources_include_unregistered_suggestions(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    body = client.get("/api/sources").json()
+    names = {s["name"] for s in body["suggestions"]}
+    assert "ngdb_soil" in names and "ngdb_concentrate" in names
+    # every suggestion must be addable as-is through the POST contract
+    for s in body["suggestions"]:
+        assert s["kind"] in body["kinds"]
+
+
+def test_materialize_rejects_non_usgs_profile(client: TestClient):
+    assert client.post("/api/materialize", json={"profile": "synth"}).status_code == 422
+    assert client.post("/api/materialize", json={"profile": "nope"}).status_code == 422
+
+
+def test_materialize_503_when_dagster_unreachable(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("MPM_DAGSTER_URL", "http://127.0.0.1:1/dagster")
+    res = client.post("/api/materialize", json={"profile": "us-cu"})
+    assert res.status_code == 503
+    assert "unreachable" in res.json()["detail"]

@@ -3,19 +3,23 @@
 #   docker compose up --build          # pipeline (synth) + postgres + api + dagster + web
 #   MPM_PROFILE=us-cu docker compose up --build   # real-data US copper cube
 #
-#   web (nginx + React app)  -> http://localhost:8080
-#   dagster UI               -> http://localhost:3000
+#   web (nginx + React app)  -> http://127.0.0.1:8080
+#   dagster UI               -> http://127.0.0.1:8080/dagster/
+#
+# Only one port is published, and only on loopback: put a host reverse proxy
+# (TLS + auth) in front of localhost:8080 and everything, Dagster included,
+# rides behind it.
 #
 # Services:
-#   postgres  the catalog: data sources (incl. user-added), run index,
-#             per-cell scores -- and Dagster's own run storage.
-#   pipeline  one-shot CLI run of the ${MPM_PROFILE} profile; publishes to the
-#             shared ./data volume and exits. Safe to re-run: stage manifests
-#             make an unchanged pipeline a no-op.
-#   dagster   the orchestrator UI. Materialize the us-cu / us-znpb partitions
-#             from here, watch lineage, enable the weekly refresh schedule.
-#   api       read-only FastAPI over published artifacts + source management.
-#   web       the frontend, proxying /api to the api service.
+#   postgres        the catalog: data sources (incl. user-added), run index,
+#                   per-cell scores -- and Dagster's own run storage.
+#   pipeline        one-shot CLI run of the ${MPM_PROFILE} profile; publishes
+#                   to the shared ./data volume and exits. Safe to re-run:
+#                   stage manifests make an unchanged pipeline a no-op.
+#   dagster         the orchestrator UI (internal; served at /dagster/).
+#   dagster-daemon  schedules and sensors.
+#   api             read-only FastAPI over published artifacts + source management.
+#   web             the frontend; nginx proxies /api and /dagster/.
 #
 # Other invocations run through the same images, e.g.:
 #   docker compose run --rm pipeline python -m mpm etl run --profile us-cu --data-root /data
@@ -56,6 +60,10 @@ services:
         condition: service_healthy
     restart: "no"
 
+  # The Dagster UI is not published on any host port: the web service's nginx
+  # proxies it at /dagster/, so it sits behind whatever domain routing and
+  # auth fronts the app itself. --path-prefix makes the webserver generate
+  # /dagster/-rooted URLs natively.
   dagster:
     build:
       context: .
@@ -63,11 +71,30 @@ services:
     command: >
       bash -c "mkdir -p $$DAGSTER_HOME
       && cp docker/dagster.yaml $$DAGSTER_HOME/dagster.yaml
-      && dagster dev -h 0.0.0.0 -p 3000 -f src/mpm/orchestration/defs.py"
-    environment:
+      && dagster-webserver -h 0.0.0.0 -p 3000 --path-prefix /dagster
+      -f src/mpm/orchestration/defs.py"
+    environment: &dagster-env
       <<: *python-env
       DAGSTER_HOME: /data/dagster_home
       DAGSTER_PG_URL: postgresql://mpm:${POSTGRES_PASSWORD:-mpm}@postgres:5432/mpm
+    volumes:
+      - ./data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Runs schedules and sensors (dagster dev bundled this; split out, each
+  # process does one job and restarts independently).
+  dagster-daemon:
+    build:
+      context: .
+      dockerfile: docker/python.Dockerfile
+    command: >
+      bash -c "mkdir -p $$DAGSTER_HOME
+      && cp docker/dagster.yaml $$DAGSTER_HOME/dagster.yaml
+      && dagster-daemon run -f src/mpm/orchestration/defs.py"
+    environment: *dagster-env
     volumes:
       - ./data:/data
     depends_on:
@@ -80,7 +107,10 @@ services:
       context: .
       dockerfile: docker/python.Dockerfile
     command: uvicorn mpm.api:app --host 0.0.0.0 --port 8000
-    environment: *python-env
+    environment:
+      <<: *python-env
+      # Lets POST /api/materialize launch runs via Dagster's GraphQL API.
+      MPM_DAGSTER_URL: http://dagster:3000/dagster
     volumes:
       - ./data:/data:ro
     depends_on:
@@ -93,14 +123,19 @@ services:
       retries: 5
     restart: unless-stopped
 
+  # The single published port, bound to loopback by default: a host-level
+  # reverse proxy (with its own TLS/auth) forwards to localhost:8080, and
+  # nothing in this stack is reachable from the network directly. Set
+  # MPM_BIND=0.0.0.0 only if you genuinely want the port open.
   web:
     build:
       context: .
       dockerfile: docker/web.Dockerfile
     ports:
-      - "${MPM_PORT:-8080}:80"
+      - "${MPM_BIND:-127.0.0.1}:${MPM_PORT:-8080}:80"
     depends_on:
       - api
+      - dagster
     restart: unless-stopped
 
 volumes:
