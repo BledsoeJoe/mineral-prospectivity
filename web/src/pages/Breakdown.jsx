@@ -72,8 +72,8 @@ export default function Breakdown() {
           models, each trained on all known deposits plus a different random
           sample of unlabeled cells temporarily treated as barren. A
           cell&apos;s score is the ensemble&apos;s average vote that it looks
-          deposit-like. The map colours by <b>percentile</b> of that score
-          (raw values are tiny and log-skewed — colouring them linearly would
+          deposit-like. The map colors by <b>percentile</b> of that score
+          (raw values are tiny and log-skewed — coloring them linearly would
           paint the whole country in the two palest steps).
         </p>
         <p>

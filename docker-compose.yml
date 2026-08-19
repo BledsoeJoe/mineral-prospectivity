@@ -68,8 +68,6 @@ services:
       <<: *python-env
       DAGSTER_HOME: /data/dagster_home
       DAGSTER_PG_URL: postgresql://mpm:${POSTGRES_PASSWORD:-mpm}@postgres:5432/mpm
-    ports:
-      - "${MPM_DAGSTER_PORT:-3000}:3000"
     volumes:
       - ./data:/data
     depends_on:

@@ -22,7 +22,7 @@ export default function About() {
           the results legible.
         </p>
         <p>
-          The centre of gravity is deliberately <i>not</i> the model — it is
+          The center of gravity is deliberately <i>not</i> the model — it is
           gradient-boosted trees, the most boring reasonable choice. The work
           is in everything around it: where the data comes from, what has to
           be true for a validation number to mean anything, and the three ways
