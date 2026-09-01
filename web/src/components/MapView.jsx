@@ -9,6 +9,7 @@ import {
   hexToRgb, percentileScale, rampColor,
 } from '../colors.js'
 
+const CARTO_KEY = import.meta.env.VITE_CARTO_KEY;
 const LAYER_MODES = [
   { id: 'score', label: 'Prospectivity' },
   { id: 'uncertainty', label: 'Uncertainty' },
@@ -107,8 +108,8 @@ export default function MapView({ cells, hasTruth }) {
     new TileLayer({
       id: 'basemap',
       data: dark
-        ? 'https://basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}.png'
-        : 'https://basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}.png',
+        ? `https://basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}.png?key=${CARTO_KEY}`
+        : `https://basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}.png?key=${CARTO_KEY}`,
       minZoom: 0,
       maxZoom: 19,
       tileSize: 256,
