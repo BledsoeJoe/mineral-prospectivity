@@ -31,9 +31,10 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     )
 
     from mpm import api
+    from mpm.storage import open_storage
 
-    monkeypatch.setattr(api, "DATA_ROOT", tmp_path)
-    monkeypatch.setattr(api, "RUNS_ROOT", tmp_path / "runs")
+    monkeypatch.setattr(api, "DATA_ROOT", str(tmp_path))
+    monkeypatch.setattr(api, "RUNS_ROOT", open_storage(tmp_path / "runs"))
     return TestClient(api.app)
 
 
@@ -58,6 +59,26 @@ def test_cells_served_pre_gzipped(client: TestClient):
     assert res.status_code == 200
     # httpx transparently decompresses; the payload must round-trip.
     assert res.json()[0]["h"] == "abc"
+
+
+def test_cells_streamed_not_read_whole(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    """Artifacts must stream. Round-tripping passes either way, so this pins
+    the mechanism instead."""
+    from mpm.storage import Storage
+
+    def _forbidden(self: Storage) -> bytes:
+        raise AssertionError(f"{self.name} was read whole instead of streamed")
+
+    monkeypatch.setattr(Storage, "read_bytes", _forbidden)
+    run = "20260101T000000Z-abc12345"
+    for artifact in ("cells", "report", "curves", "importance"):
+        res = client.get(f"/api/profiles/synth/runs/{run}/{artifact}")
+        assert res.status_code == 200, artifact
+
+
+def test_run_listing_excludes_the_latest_pointer(client: TestClient):
+    """latest.json sits beside the run directories and is not a run."""
+    assert client.get("/api/profiles/synth/runs").json() == ["20260101T000000Z-abc12345"]
 
 
 def test_unknown_run_404s(client: TestClient):

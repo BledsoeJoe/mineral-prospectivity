@@ -16,7 +16,7 @@ difference.
 > what counts as a leak), and the verification are mine; most of the
 > line-by-line code is not. The app's About page carries the full version.
 
-Five services, one compose file:
+Six services, one compose file:
 
 - **`mpm etl` + Dagster**: a structured ingest pipeline that *acquires* open
   USGS data (checksummed, cached, retried), *validates* it through
@@ -61,6 +61,14 @@ python -m mpm etl run --profile us-cu --data-root data
 uvicorn mpm.api:app &             # api on :8000
 cd web && npm install && npm run dev          # frontend on :5173
 ```
+
+The basemap tiles come from CARTO, which requires an API key. Put
+`MAPS_API_KEY=<key>` in a `.env` at the repo root (gitignored); compose passes it
+into the frontend build as `VITE_CARTO_KEY`. It is a public client-side
+credential, baked into the built bundle and readable in devtools, so it is
+protected by the domain restriction you set in the CARTO dashboard rather than by
+secrecy. Without it every data layer still renders and the basemap tiles come
+back watermarked.
 
 ![the app](docs/app.png)
 
@@ -296,8 +304,9 @@ industry already knows.
 
 ## The web app
 
-`docker compose up` serves three containers: the one-shot pipeline, the API,
-and nginx serving the built React app (proxying `/api`).
+`docker compose up` brings up the whole stack: Postgres, the one-shot pipeline,
+the Dagster webserver and its daemon, the API, and nginx serving the built React
+app (proxying `/api` and `/dagster/`).
 
 - **Map**: score surface (percentile-binned sequential ramp), ensemble
   disagreement, and the spatial CV blocks; known deposits and, on the
@@ -409,6 +418,56 @@ paying off during development:
   generalisation across positives, not the discovery rate.
 - Buffering assumes isotropic distance. Geological continuity follows structure,
   not circles; a strike-aware buffer would be stricter and more correct.
+
+## Where this is going
+
+Mostly not built yet, recorded here so the direction is legible. The storage
+seam described at the end is the exception: it is in the code. The branch
+checklist lives in `docs/ai-scaffold-pr.md`.
+
+Everything above runs as a single unit: pipeline, orchestrator, API and frontend
+sharing one machine, one Postgres, and one `./data` volume. That is the right
+shape for a demo and the wrong shape once there is real compute behind it. The
+orchestrator wants resources, credentials and privacy. The public read path wants
+none of those things and should not be able to reach them.
+
+The split:
+
+- **A private orchestration system.** Dagster, the pipeline, and their own
+  Postgres, sized for the work and not publicly reachable. It holds the upstream
+  fetch credentials and does all of the writing.
+- **A public application system.** The FastAPI service and the frontend, low
+  resource, read only, with no route back into the private side.
+- **S3 as the boundary.** `etl/publish.py` already writes immutable run
+  directories plus a small `latest.json` pointer, which is the shape object
+  storage wants. Putting them in a bucket makes the published run the contract
+  between the two systems instead of a shared filesystem.
+
+The prerequisite was a storage seam, and that part is built. `src/mpm/storage.py`
+addresses artifacts through a small `Storage` interface over a local directory
+or an S3 prefix, and `etl/publish.py` and `mpm/api.py` both go through it. One
+environment variable moves the boundary:
+
+```bash
+MPM_RUNS_ROOT=s3://bucket/mineral-prospectivity/runs   # path, or s3:// URI
+AWS_ENDPOINT_URL=https://us-east-1.linodeobjects.com   # any S3-compatible store
+```
+
+Deliberately, only the *published runs* move. The raw download cache and the
+stage manifests stay on the private side's local disk, because stage freshness
+is built on rename atomicity and cheap stat calls, and object storage offers
+neither. What crosses the boundary is the finished artifact, which is the thing
+the two systems actually need to agree on.
+
+Two consequences worth naming. The API reads artifacts in bounded chunks rather
+than loading them, which is what lets the public node be small: streaming a
+192 MB object peaks at about 7 MB of process memory instead of tracking the
+object's size. And once `scores.parquet` lives in object storage, the bucket is
+a data product boundary rather than shared disk, so a notebook, DuckDB or a BI
+tool can read a published run directly without going through the app.
+
+Still on the private side and still local: the stage manifests, the raw cache,
+and Dagster's own storage. Splitting those is the next step, not this one.
 
 ## References
 

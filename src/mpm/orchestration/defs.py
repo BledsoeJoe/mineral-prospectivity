@@ -51,6 +51,7 @@ from mpm.etl.acquire import acquire
 from mpm.etl.profiles import PROFILES
 from mpm.etl.sources import REGISTRY
 from mpm.etl.stages import StageOutcome, load_outcome
+from mpm.storage import Storage, runs_storage
 
 USGS_PROFILES = sorted(p.name for p in PROFILES.values() if p.kind == "usgs")
 profile_partitions = StaticPartitionsDefinition(USGS_PROFILES)
@@ -62,6 +63,11 @@ def _data_root() -> Path:
 
 def _stages_root(profile_name: str) -> Path:
     return _data_root() / "stages" / profile_name
+
+
+def _runs_root(profile_name: str) -> Storage:
+    """Published runs for one profile; a local directory or a bucket prefix."""
+    return runs_storage(_data_root()) / profile_name
 
 
 def _profile(context: AssetExecutionContext):
@@ -224,12 +230,14 @@ def prospectivity_run(context: AssetExecutionContext) -> MaterializeResult:
     provenance += [a.provenance() | {"kind": k} for a, k, _ in extras]
 
     out = flow.stage_train_publish(
-        profile, root, _data_root() / "runs" / profile.name, cube_out, provenance, force=False
+        profile, root, _runs_root(profile.name), cube_out, provenance, force=False
     )
     md = _outcome_metadata(out)
     meta = out.manifest.get("meta", {})
     if meta.get("run_id"):
         md["run_id"] = meta["run_id"]
+    if meta.get("run_uri"):
+        md["run_uri"] = meta["run_uri"]
     for k, v in (meta.get("headline") or {}).items():
         if v is not None:
             md[f"headline_{k}"] = float(v)

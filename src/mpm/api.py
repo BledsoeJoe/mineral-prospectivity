@@ -5,7 +5,13 @@ service does little more than list them and stream them with the right
 headers. All the expensive thinking happened at publish time; the API's job
 is to be boring, fast, and impossible to break by asking a weird question.
 
+Artifacts are addressed through :mod:`mpm.storage`, so this serves a local
+directory or an S3 prefix unchanged. Every artifact response streams in
+bounded chunks rather than loading the body, which keeps memory flat in the
+size of the cube.
+
     MPM_DATA_ROOT=data uvicorn mpm.api:app
+    MPM_RUNS_ROOT=s3://bucket/prefix/runs uvicorn mpm.api:app
 
 Endpoints
     GET /api/health
@@ -25,20 +31,19 @@ Endpoints
 
 from __future__ import annotations
 
-import json
 import os
 import re
-from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from mpm import db
+from mpm.storage import Storage, runs_storage
 
-DATA_ROOT = Path(os.environ.get("MPM_DATA_ROOT", "data"))
-RUNS_ROOT = DATA_ROOT / "runs"
+DATA_ROOT = os.environ.get("MPM_DATA_ROOT", "data")
+RUNS_ROOT = runs_storage()
 
 _SAFE = re.compile(r"^[A-Za-z0-9_-]+$")
 
@@ -55,18 +60,31 @@ def _safe(name: str, what: str) -> str:
     return name
 
 
-def _run_dir(profile: str, run_id: str) -> Path:
+def _run_dir(profile: str, run_id: str) -> Storage:
+    """Resolve a run directory. Existence is left to the artifact read, which
+    has to handle a missing object anyway and costs one request instead of
+    a LIST."""
     _safe(profile, "profile")
     _safe(run_id, "run id")
     if run_id == "latest":
         pointer = RUNS_ROOT / profile / "latest.json"
         if not pointer.exists():
             raise HTTPException(404, f"profile {profile!r} has no published runs")
-        run_id = json.loads(pointer.read_text())["run_id"]
-    d = RUNS_ROOT / profile / run_id
-    if not d.is_dir():
-        raise HTTPException(404, f"run {profile}/{run_id} not found")
-    return d
+        run_id = pointer.read_json()["run_id"]
+    return RUNS_ROOT / profile / run_id
+
+
+def _stream(artifact: Storage, media_type: str, **headers: str) -> StreamingResponse:
+    """Stream an artifact in bounded chunks rather than buffering it."""
+    try:
+        size = artifact.size()
+    except FileNotFoundError:
+        raise HTTPException(404, f"{artifact.name} not found for this run") from None
+    return StreamingResponse(
+        artifact.iter_chunks(),
+        media_type=media_type,
+        headers={"Content-Length": str(size), **headers},
+    )
 
 
 @app.get("/api/health")
@@ -74,23 +92,22 @@ def health() -> dict:
     return {
         "ok": True,
         "data_root": str(DATA_ROOT),
+        "runs_root": RUNS_ROOT.uri,
         "profiles": _profiles(),
         "catalog_db": db.available(),
     }
 
 
 def _profiles() -> list[str]:
-    if not RUNS_ROOT.exists():
-        return []
-    return sorted(p.name for p in RUNS_ROOT.iterdir() if (p / "latest.json").exists())
+    return sorted(p.name for p in RUNS_ROOT.ls() if (p / "latest.json").exists())
 
 
 @app.get("/api/profiles")
 def profiles() -> list[dict]:
     out = []
     for name in _profiles():
-        latest = json.loads((RUNS_ROOT / name / "latest.json").read_text())["run_id"]
-        report = json.loads((RUNS_ROOT / name / latest / "report.json").read_text())
+        latest = (RUNS_ROOT / name / "latest.json").read_json()["run_id"]
+        report = (RUNS_ROOT / name / latest / "report.json").read_json()
         out.append({
             "profile": name,
             "latest_run": latest,
@@ -105,25 +122,26 @@ def profiles() -> list[dict]:
 @app.get("/api/profiles/{profile}/runs")
 def runs(profile: str) -> list[str]:
     _safe(profile, "profile")
-    root = RUNS_ROOT / profile
-    if not root.is_dir():
+    children = (RUNS_ROOT / profile).ls()
+    if not children:
         raise HTTPException(404, f"profile {profile!r} not found")
-    return sorted((p.name for p in root.iterdir() if p.is_dir()), reverse=True)
+    # latest.json sits beside the run directories; it is a pointer, not a run.
+    return sorted((p.name for p in children if p.name != "latest.json"), reverse=True)
 
 
 @app.get("/api/profiles/{profile}/runs/{run_id}/report")
-def report(profile: str, run_id: str) -> FileResponse:
-    return FileResponse(_run_dir(profile, run_id) / "report.json", media_type="application/json")
+def report(profile: str, run_id: str) -> StreamingResponse:
+    return _stream(_run_dir(profile, run_id) / "report.json", "application/json")
 
 
 @app.get("/api/profiles/{profile}/runs/{run_id}/curves")
-def curves(profile: str, run_id: str) -> FileResponse:
-    return FileResponse(_run_dir(profile, run_id) / "curves.json", media_type="application/json")
+def curves(profile: str, run_id: str) -> StreamingResponse:
+    return _stream(_run_dir(profile, run_id) / "curves.json", "application/json")
 
 
 @app.get("/api/profiles/{profile}/runs/{run_id}/importance")
-def importance(profile: str, run_id: str) -> FileResponse:
-    return FileResponse(_run_dir(profile, run_id) / "importance.json", media_type="application/json")
+def importance(profile: str, run_id: str) -> StreamingResponse:
+    return _stream(_run_dir(profile, run_id) / "importance.json", "application/json")
 
 
 # ------------------------------------------------------------ source catalog
@@ -233,14 +251,12 @@ def materialize(body: MaterializeIn) -> dict:
 
 
 @app.get("/api/profiles/{profile}/runs/{run_id}/cells")
-def cells(profile: str, run_id: str) -> Response:
+def cells(profile: str, run_id: str) -> StreamingResponse:
     """The map payload. Stored gzipped; served gzipped -- every browser
-    inflates transparently, and the server never spends CPU recompressing."""
-    path = _run_dir(profile, run_id) / "cells.json.gz"
-    if not path.exists():
-        raise HTTPException(404, "cells artifact missing for this run")
-    return Response(
-        content=path.read_bytes(),
-        media_type="application/json",
-        headers={"Content-Encoding": "gzip", "Cache-Control": "public, max-age=3600"},
+    inflates transparently, and the server never spends CPU recompressing.
+    The largest artifact here, and the reason responses stream."""
+    return _stream(
+        _run_dir(profile, run_id) / "cells.json.gz",
+        "application/json",
+        **{"Content-Encoding": "gzip", "Cache-Control": "public, max-age=3600"},
     )
