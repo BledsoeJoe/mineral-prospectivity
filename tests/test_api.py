@@ -38,9 +38,63 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     return TestClient(api.app)
 
 
+@pytest.fixture()
+def remote_runs(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A non-local runs root, which the public role requires."""
+    import fsspec
+
+    from mpm import api
+    from mpm.storage import Storage
+
+    monkeypatch.setattr(
+        api, "RUNS_ROOT", Storage(fsspec.filesystem("memory"), "/bucket/runs", "memory")
+    )
+
+
 def test_health_lists_profiles(client: TestClient):
     body = client.get("/api/health").json()
     assert body["ok"] and body["profiles"] == ["synth"]
+
+
+def test_full_role_advertises_controls(client: TestClient):
+    body = client.get("/api/health").json()
+    assert body["role"] == "all"
+    assert body["capabilities"]["materialize"] and body["capabilities"]["dagster_ui"]
+
+
+def test_public_role_serves_reads_only(remote_runs, monkeypatch: pytest.MonkeyPatch):
+    """Any non-GET route on the public node is a route back to the private side.
+
+    Asserted over the whole route table, so a write endpoint added to the
+    wrong router later fails here too.
+    """
+    from mpm import api
+
+    monkeypatch.setenv("MPM_API_ROLE", "public")
+    app = api.create_app()
+    assert {m for r in app.routes for m in getattr(r, "methods", ())} <= {"GET", "HEAD"}
+
+    body = TestClient(app).get("/api/health").json()
+    assert body["role"] == "public"
+    assert not any(body["capabilities"].values())
+
+
+def test_public_role_refuses_local_runs_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Otherwise a missing MPM_RUNS_ROOT looks like "nothing published yet"."""
+    from mpm import api
+    from mpm.storage import open_storage
+
+    monkeypatch.setattr(api, "RUNS_ROOT", open_storage(tmp_path / "runs"))
+    with pytest.raises(RuntimeError, match="MPM_RUNS_ROOT"):
+        api.create_app("public")
+
+
+def test_unknown_role_is_refused(remote_runs):
+    """A typo must not fall back to the default, which is the role with writes."""
+    from mpm import api
+
+    with pytest.raises(ValueError, match="MPM_API_ROLE"):
+        api.create_app("pubilc")
 
 
 def test_profiles_carry_headline(client: TestClient):
