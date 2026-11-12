@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react'
 import { fetchSources, postMaterialize, postSource, toggleSource } from '../api.js'
+import { useCapabilities } from '../capabilities.jsx'
 
 const USGS_PROFILES = ['us-cu', 'us-znpb']
 
 function SourcesManager() {
+  const caps = useCapabilities()
   const [data, setData] = useState(null)
   const [form, setForm] = useState({ name: '', url: '', kind: 'xyz_grid', value_name: '', description: '' })
   const [busy, setBusy] = useState(false)
@@ -15,10 +17,10 @@ function SourcesManager() {
   const reload = () => fetchSources().then(setData).catch(() => setData({ error: true }))
   useEffect(() => { reload() }, [])
 
-  if (!data) return <p className="form-note">Loading source catalog…</p>
+  if (!data || !caps) return <p className="form-note">Loading source catalog…</p>
   if (data.error) return <p className="form-error">Could not reach the API.</p>
 
-  const dbUp = data.catalog_db
+  const canWrite = caps.sources_write
 
   const addBody = async (body) => {
     setBusy(true)
@@ -67,16 +69,27 @@ function SourcesManager() {
 
   return (
     <>
-      {!dbUp && (
+      {!canWrite && (
         <p className="form-note">
-          The catalog database is not connected; showing the built-in registry
-          read-only. Start the <code>postgres</code> service to add or toggle
-          sources.
+          {caps.materialize ? (
+            <>
+              The catalog database is not connected; showing the built-in
+              registry read-only. Start the <code>postgres</code> service to
+              add or toggle sources.
+            </>
+          ) : (
+            <>
+              This deployment is read-only: it serves published runs from
+              object storage and has no route back to the pipeline. Sources
+              are registered and runs launched from the private orchestration
+              node.
+            </>
+          )}
         </p>
       )}
       <table className="sources-table">
         <thead>
-          <tr><th>Source</th><th>Kind</th><th>Status</th><th></th></tr>
+          <tr><th>Source</th><th>Kind</th><th>Status</th>{canWrite && <th></th>}</tr>
         </thead>
         <tbody>
           {data.sources.map((s) => (
@@ -97,165 +110,176 @@ function SourcesManager() {
                 </span>
                 {s.builtin && <span className="badge" style={{ marginLeft: 4 }}>builtin</span>}
               </td>
-              <td>
-                <button
-                  className="toggle-btn"
-                  disabled={!dbUp || ['mrds', 'magnetic'].includes(s.name)}
-                  title={['mrds', 'magnetic'].includes(s.name)
-                    ? 'supplies the labels / spatial domain; cannot be disabled'
-                    : ''}
-                  onClick={() => toggle(s)}
-                >
-                  {s.enabled ? 'disable' : 'enable'}
-                </button>
-              </td>
+              {canWrite && (
+                <td>
+                  <button
+                    className="toggle-btn"
+                    disabled={['mrds', 'magnetic'].includes(s.name)}
+                    title={['mrds', 'magnetic'].includes(s.name)
+                      ? 'supplies the labels / spatial domain; cannot be disabled'
+                      : ''}
+                    onClick={() => toggle(s)}
+                  >
+                    {s.enabled ? 'disable' : 'enable'}
+                  </button>
+                </td>
+              )}
             </tr>
           ))}
         </tbody>
       </table>
 
-      <h3>Add a source</h3>
-      {data.suggestions.length > 0 ? (
+      {canWrite && (
         <>
-          <p className="form-note">
-            Curated additions, each verified to download and parse against the
-            current readers:
-          </p>
-          {data.suggestions.map((s) => (
-            <div className="paper" key={s.name}>
-              <div className="p-title">
-                {s.name}
-                <span className="badge" style={{ marginLeft: 8 }}>{s.kind}</span>
-                <span className="form-note" style={{ marginLeft: 8 }}>{s.size_mb} MB</span>
-              </div>
-              <div className="p-venue">
-                <a href={s.url} target="_blank" rel="noreferrer">{s.url}</a>
-              </div>
-              <div className="p-how">{s.description}</div>
-              <div style={{ marginTop: 10 }}>
-                <button
-                  className="primary-btn"
-                  disabled={!dbUp || busy}
-                  onClick={() => addBody({
-                    name: s.name, url: s.url, kind: s.kind,
-                    value_name: s.value_name, description: s.description,
-                    citation: s.citation,
-                  })}
-                >
-                  {busy ? 'Adding…' : 'Add to catalog'}
+          <h3>Add a source</h3>
+          {data.suggestions.length > 0 ? (
+            <>
+              <p className="form-note">
+                Curated additions, each verified to download and parse against the
+                current readers:
+              </p>
+              {data.suggestions.map((s) => (
+                <div className="paper" key={s.name}>
+                  <div className="p-title">
+                    {s.name}
+                    <span className="badge" style={{ marginLeft: 8 }}>{s.kind}</span>
+                    <span className="form-note" style={{ marginLeft: 8 }}>{s.size_mb} MB</span>
+                  </div>
+                  <div className="p-venue">
+                    <a href={s.url} target="_blank" rel="noreferrer">{s.url}</a>
+                  </div>
+                  <div className="p-how">{s.description}</div>
+                  <div style={{ marginTop: 10 }}>
+                    <button
+                      className="primary-btn"
+                      disabled={busy}
+                      onClick={() => addBody({
+                        name: s.name, url: s.url, kind: s.kind,
+                        value_name: s.value_name, description: s.description,
+                        citation: s.citation,
+                      })}
+                    >
+                      {busy ? 'Adding…' : 'Add to catalog'}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </>
+          ) : (
+            <p className="form-note">
+              Every curated source is already in the catalog. Custom sources can
+              still be registered below.
+            </p>
+          )}
+          {msg && <p className={msg.ok ? 'form-ok' : 'form-error'}>{msg.text}</p>}
+
+          <details style={{ marginTop: 12 }}>
+            <summary className="form-note" style={{ cursor: 'pointer' }}>
+              Advanced: register a custom source by URL
+            </summary>
+            <p className="form-note" style={{ marginTop: 8 }}>
+              Two kinds are understood: <code>xyz_grid</code> (headerless
+              lon/lat/value triples, optionally gzipped, the format of the USGS
+              magnetic and gravity grids) and <code>ngdb_geochem</code> (an
+              NGDB-style csv zip). Hosts are restricted to{' '}
+              {data.allowed_hosts.join(', ')}; the pipeline fetches these URLs, so
+              this is not an open proxy.
+            </p>
+            <form className="source-form" onSubmit={submit}>
+              <label>
+                name
+                <input value={form.name} required pattern="[a-z][a-z0-9_]{2,40}"
+                  onChange={(e) => setForm({ ...form, name: e.target.value })} />
+              </label>
+              <label>
+                kind
+                <select value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value })}>
+                  {data.kinds.map((k) => <option key={k}>{k}</option>)}
+                </select>
+              </label>
+              <label className="full">
+                url
+                <input value={form.url} required type="url"
+                  onChange={(e) => setForm({ ...form, url: e.target.value })} />
+              </label>
+              <label>
+                {form.kind === 'xyz_grid' ? 'covariate name' : 'column prefix'}
+                <input value={form.value_name} required pattern="[a-z][a-z0-9_]{2,40}"
+                  onChange={(e) => setForm({ ...form, value_name: e.target.value })} />
+              </label>
+              <label>
+                description
+                <input value={form.description}
+                  onChange={(e) => setForm({ ...form, description: e.target.value })} />
+              </label>
+              <div className="actions">
+                <button className="primary-btn" disabled={busy} type="submit">
+                  {busy ? 'Adding…' : 'Add source'}
                 </button>
               </div>
-            </div>
-          ))}
+            </form>
+            <p className="form-note">
+              Naming is not cosmetic: the covariate name decides which side of the
+              exploration-bias audit a source lands on. Name a column
+              <code> sample_density_soil</code> and the quarantine list routes it to
+              the effort model; name it <code>soil</code> and its element columns
+              join the geology model. Whoever adds a source makes that call,
+              visibly.
+            </p>
+          </details>
         </>
-      ) : (
-        <p className="form-note">
-          Every curated source is already in the catalog. Custom sources can
-          still be registered below.
-        </p>
       )}
-      {msg && <p className={msg.ok ? 'form-ok' : 'form-error'}>{msg.text}</p>}
 
-      <details style={{ marginTop: 12 }}>
-        <summary className="form-note" style={{ cursor: 'pointer' }}>
-          Advanced: register a custom source by URL
-        </summary>
-        <p className="form-note" style={{ marginTop: 8 }}>
-          Two kinds are understood: <code>xyz_grid</code> (headerless
-          lon/lat/value triples, optionally gzipped, the format of the USGS
-          magnetic and gravity grids) and <code>ngdb_geochem</code> (an
-          NGDB-style csv zip). Hosts are restricted to{' '}
-          {data.allowed_hosts.join(', ')}; the pipeline fetches these URLs, so
-          this is not an open proxy.
-        </p>
-        <form className="source-form" onSubmit={submit}>
-          <label>
-            name
-            <input value={form.name} required pattern="[a-z][a-z0-9_]{2,40}"
-              onChange={(e) => setForm({ ...form, name: e.target.value })} />
-          </label>
-          <label>
-            kind
-            <select value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value })}>
-              {data.kinds.map((k) => <option key={k}>{k}</option>)}
+      {caps.materialize && (
+        <>
+          <h3>Rebuild the cube</h3>
+          <p className="form-note">
+            {justAdded
+              ? 'The catalog changed. Materialize to fold the new source into the next cube:'
+              : 'Launches a real Dagster run (visible in its UI, with lineage and '
+                + 'logs). Stage manifests keep it cheap when nothing changed.'}
+          </p>
+          <div className="actions" style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <select
+              value={profile}
+              onChange={(e) => setProfile(e.target.value)}
+              style={{
+                font: 'inherit', fontSize: 13, padding: '6px 8px', borderRadius: 6,
+                border: '1px solid var(--border)', background: 'var(--page)',
+                color: 'var(--text-primary)',
+              }}
+            >
+              {USGS_PROFILES.map((p) => <option key={p}>{p}</option>)}
             </select>
-          </label>
-          <label className="full">
-            url
-            <input value={form.url} required type="url"
-              onChange={(e) => setForm({ ...form, url: e.target.value })} />
-          </label>
-          <label>
-            {form.kind === 'xyz_grid' ? 'covariate name' : 'column prefix'}
-            <input value={form.value_name} required pattern="[a-z][a-z0-9_]{2,40}"
-              onChange={(e) => setForm({ ...form, value_name: e.target.value })} />
-          </label>
-          <label>
-            description
-            <input value={form.description}
-              onChange={(e) => setForm({ ...form, description: e.target.value })} />
-          </label>
-          <div className="actions">
-            <button className="primary-btn" disabled={!dbUp || busy} type="submit">
-              {busy ? 'Adding…' : 'Add source'}
+            <button
+              className="primary-btn"
+              disabled={launch?.state === 'launching'}
+              onClick={materialize}
+            >
+              {launch?.state === 'launching' ? 'Launching…' : 'Materialize in Dagster'}
             </button>
-          </div>
-        </form>
-        <p className="form-note">
-          Naming is not cosmetic: the covariate name decides which side of the
-          exploration-bias audit a source lands on. Name a column
-          <code> sample_density_soil</code> and the quarantine list routes it to
-          the effort model; name it <code>soil</code> and its element columns
-          join the geology model. Whoever adds a source makes that call,
-          visibly.
-        </p>
-      </details>
-
-      <h3>Rebuild the cube</h3>
-      <p className="form-note">
-        {justAdded
-          ? 'The catalog changed. Materialize to fold the new source into the next cube:'
-          : 'Launches a real Dagster run (visible in its UI, with lineage and '
-            + 'logs). Stage manifests keep it cheap when nothing changed.'}
-      </p>
-      <div className="actions" style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-        <select
-          value={profile}
-          onChange={(e) => setProfile(e.target.value)}
-          style={{
-            font: 'inherit', fontSize: 13, padding: '6px 8px', borderRadius: 6,
-            border: '1px solid var(--border)', background: 'var(--page)',
-            color: 'var(--text-primary)',
-          }}
-        >
-          {USGS_PROFILES.map((p) => <option key={p}>{p}</option>)}
-        </select>
-        <button
-          className="primary-btn"
-          disabled={launch?.state === 'launching'}
-          onClick={materialize}
-        >
-          {launch?.state === 'launching' ? 'Launching…' : 'Materialize in Dagster'}
-        </button>
-        {launch && launch.state !== 'launching' && (
-          <span className={launch.state === 'error' ? 'form-error' : 'form-ok'}>
-            {launch.text}
-            {launch.url && (
-              <>
-                {' '}
-                <a href={launch.url} target="_blank" rel="noreferrer">
-                  watch the run ↗
-                </a>
-              </>
+            {launch && launch.state !== 'launching' && (
+              <span className={launch.state === 'error' ? 'form-error' : 'form-ok'}>
+                {launch.text}
+                {launch.url && (
+                  <>
+                    {' '}
+                    <a href={launch.url} target="_blank" rel="noreferrer">
+                      watch the run ↗
+                    </a>
+                  </>
+                )}
+              </span>
             )}
-          </span>
-        )}
-      </div>
+          </div>
+        </>
+      )}
     </>
   )
 }
 
 export default function Architecture() {
+  const caps = useCapabilities()
   return (
     <div className="prose-page">
       <div className="prose">
@@ -381,10 +405,20 @@ export default function Architecture() {
           has any work to do. &quot;Materialize all&quot; is therefore always
           safe. Instance storage (run history, event logs) lives in the same
           Postgres as the catalog, so CLI materializations and the webserver
-          share one history. The UI is served by this app&apos;s own nginx at{' '}
-          <a href="/dagster/" target="_blank" rel="noreferrer">/dagster/ ↗</a>,
-          so it lives on the same origin and behind the same access control as
-          everything else; no separate port is exposed.
+          share one history.{' '}
+          {caps?.dagster_ui ? (
+            <>
+              The UI is served by this app&apos;s own nginx at{' '}
+              <a href="/dagster/" target="_blank" rel="noreferrer">/dagster/ ↗</a>,
+              so it lives on the same origin and behind the same access control
+              as everything else; no separate port is exposed.
+            </>
+          ) : (
+            <>
+              This deployment does not serve the UI at all: it lives on the
+              private orchestration node, reachable only by its operators.
+            </>
+          )}
         </p>
 
         <h2>Postgres: the catalog</h2>
