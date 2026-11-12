@@ -56,7 +56,7 @@ docker compose up --build         # synth profile -> 127.0.0.1:8080 (dagster at 
 MPM_PROFILE=us-cu docker compose up --build   # real-data US copper cube
 
 # or, without docker:
-pip install -e ".[dev,api,orchestration]"
+pip install -e ".[model,dev,api,orchestration]"
 python -m mpm etl run --profile us-cu --data-root data
 uvicorn mpm.api:app &             # api on :8000
 cd web && npm install && npm run dev          # frontend on :5173

@@ -139,7 +139,7 @@ def _print_report(report: dict) -> None:
 
 
 def cmd_etl_run(args: argparse.Namespace) -> None:
-    from mpm.etl import run_pipeline
+    from mpm.etl.flow import run_pipeline
 
     summary = run_pipeline(
         args.profile,
@@ -157,7 +157,7 @@ def cmd_etl_status(args: argparse.Namespace) -> None:
 
 
 def cmd_etl_profiles(args: argparse.Namespace) -> None:
-    from mpm.etl import PROFILES
+    from mpm.etl.profiles import PROFILES
 
     for p in PROFILES.values():
         print(f"{p.name:<10} [{p.kind}]  {p.description}")

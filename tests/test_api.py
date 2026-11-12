@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import gzip
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -87,6 +89,31 @@ def test_public_role_refuses_local_runs_root(tmp_path: Path, monkeypatch: pytest
     monkeypatch.setattr(api, "RUNS_ROOT", open_storage(tmp_path / "runs"))
     with pytest.raises(RuntimeError, match="MPM_RUNS_ROOT"):
         api.create_app("public")
+
+
+MODEL_MODULES = ("numpy", "pandas", "pyarrow", "sklearn", "lightgbm", "h3", "yaml", "matplotlib")
+
+
+def test_api_runs_without_the_model_extra():
+    """The api image installs no [model] deps, but this test image has them
+    all, so a stray import would pass every other test and crash in prod.
+
+    Runs in a subprocess with those modules blocked (a ``None`` entry in
+    ``sys.modules`` makes importing it raise), and hits the handlers that
+    import lazily: the source catalog and materialize's profile lookup.
+    """
+    code = f"""
+import sys
+for name in {MODEL_MODULES!r}:
+    sys.modules[name] = None
+from fastapi.testclient import TestClient
+from mpm import api
+client = TestClient(api.create_app("all"))
+assert client.get("/api/sources").status_code == 200
+assert client.post("/api/materialize", json={{"profile": "synth"}}).status_code == 422
+"""
+    res = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=False)
+    assert res.returncode == 0, res.stderr
 
 
 def test_unknown_role_is_refused(remote_runs):
