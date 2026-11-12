@@ -16,6 +16,8 @@ dependencies = [
     "h3>=4.0",
     "pyyaml>=6.0",
     "matplotlib>=3.8",
+    "fsspec>=2024.6",
+    "s3fs>=2024.6",
 ]
 
 [project.optional-dependencies]
@@ -36,3 +38,12 @@ target-version = "py310"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+# Local exploration only, kept out of the package and the container image.
+[dependency-groups]
+notebooks = [
+    "ipykernel>=7.3.0",
+    "polars>=1.43.2",
+    "deltalake>=1.6.3",
+    "python-dotenv>=1.0",
+]

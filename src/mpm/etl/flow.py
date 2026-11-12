@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from pathlib import Path
 
 import numpy as np
@@ -43,11 +42,12 @@ from mpm.etl.stages import StageContext, StageOutcome, run_stage
 from mpm.ingest import attach_labels, clean_cube, points_to_cells, summarize
 from mpm.pipeline import run_experiment
 from mpm.report import build_report
+from mpm.storage import Storage, runs_storage
 from mpm.synth import make_synthetic_cube
 
 log = logging.getLogger("mpm.etl")
 
-ETL_VERSION = "3"
+ETL_VERSION = "4"
 """Bump to invalidate every stage manifest after a breaking logic change."""
 
 
@@ -62,7 +62,8 @@ def run_pipeline(
     profile = PROFILES[profile_name]
     data_root = Path(data_root)
     stages_root = data_root / "stages" / profile.name
-    runs_root = data_root / "runs" / profile.name
+    # Raw downloads and manifests stay local; only published runs may be remote.
+    runs_root = runs_storage(data_root) / profile.name
     force_all = "all" in force
 
     log.info("=== pipeline %s -> %s", profile.name, data_root)
@@ -103,7 +104,7 @@ def run_pipeline(
         "profile": profile.name,
         "cube": str(cube_out.output_path("cube")),
         "run_id": publish_out.manifest["meta"].get("run_id"),
-        "run_dir": str(publish_out.output_path("run_dir")),
+        "run_dir": publish_out.manifest["meta"].get("run_uri"),
         "skipped": {
             "cube": cube_out.skipped,
             "train_publish": publish_out.skipped,
@@ -448,11 +449,19 @@ def _dist_to_nearest_km(cube: pd.DataFrame, positives: pd.DataFrame) -> np.ndarr
 def stage_train_publish(
     profile: Profile,
     stages_root: Path,
-    runs_root: Path,
+    runs_root: Storage,
     cube_out: StageOutcome,
     provenance: list[dict],
     force: bool,
 ) -> StageOutcome:
+    """Train, publish the run, and record where it landed.
+
+    The stage output is a local ``published.json`` marker, not the run
+    directory: freshness stats output paths relative to the stage directory,
+    and a bucket prefix is not one. Consequence: deleting a published run from
+    storage no longer makes this stage stale, so republishing needs
+    ``--force publish``.
+    """
     cfg = Config.from_dict(dict(profile.config_overrides))
     cube_sha = next(o["sha256"] for o in cube_out.outputs if o["name"] == "cube")
     fingerprint = {
@@ -461,6 +470,11 @@ def stage_train_publish(
         "config": cfg.to_dict(),
         "profile": profile.to_dict(),
     }
+    # Repointing at a new bucket must republish. Local roots stay out: their
+    # absolute path differs between a host checkout and the bind mount, which
+    # would make every stage stale on crossing the container boundary.
+    if runs_root.protocol != "file":
+        fingerprint["runs_root"] = runs_root.uri
 
     def build(ctx: StageContext) -> None:
         df = pd.read_parquet(cube_out.output_path("cube"))
@@ -478,7 +492,7 @@ def stage_train_publish(
         from mpm import db
 
         if db.available():
-            full_report = json.loads((run_dir / "report.json").read_text())
+            full_report = (run_dir / "report.json").read_json()
             db.record_run(
                 run_dir.name, profile.name,
                 headline=result["runs"]["geology"].pooled,  # type: ignore[index]
@@ -489,10 +503,13 @@ def stage_train_publish(
                 {name: run.scores for name, run in result["runs"].items()},  # type: ignore[union-attr]
             )
 
-        ctx.outputs.append({
-            "name": "run_dir", "path": os.path.relpath(run_dir, ctx.dir), "bytes": 0, "sha256": "",
-        })
+        marker = ctx.dir / "published.json"
+        marker.write_text(
+            json.dumps({"run_id": run_dir.name, "uri": run_dir.uri}, indent=2)
+        )
+        ctx.add_output("published", marker)
         ctx.meta["run_id"] = run_dir.name
+        ctx.meta["run_uri"] = run_dir.uri
         ctx.meta["headline"] = {
             k: result["runs"]["geology"].pooled.get(k)  # type: ignore[index]
             for k in ("capture@5%", "capture@10%", "pr_auc", "roc_auc")
@@ -516,15 +533,15 @@ def backfill_catalog(data_root: Path) -> int:
     if not db.available():
         raise SystemExit("no DATABASE_URL configured")
     count = 0
-    runs_root = data_root / "runs"
-    if not runs_root.exists():
-        return 0
-    for profile_dir in sorted(runs_root.iterdir()):
-        for run_dir in sorted(p for p in profile_dir.iterdir() if p.is_dir()):
+    runs_root = runs_storage(data_root)
+    for profile_dir in runs_root.ls():
+        for run_dir in profile_dir.ls():
+            # Doubles as the "is this a run" test: object storage has no
+            # directories, so a run is whatever holds a report.
             report_path = run_dir / "report.json"
             if not report_path.exists():
                 continue
-            report = json.loads(report_path.read_text())
+            report = report_path.read_json()
             db.record_run(
                 run_dir.name, profile_dir.name,
                 headline=report.get("geology", {}).get("pooled", {}),
@@ -532,7 +549,7 @@ def backfill_catalog(data_root: Path) -> int:
             )
             scores_path = run_dir / "scores.parquet"
             if scores_path.exists():
-                scores = pd.read_parquet(scores_path)
+                scores = scores_path.read_parquet()
                 db.copy_cells(
                     run_dir.name,
                     {m: g.drop(columns="model") for m, g in scores.groupby("model")},
@@ -544,6 +561,7 @@ def backfill_catalog(data_root: Path) -> int:
 def pipeline_status(data_root: Path) -> dict[str, object]:
     """What exists, per profile: stage freshness and the latest published run."""
     out: dict[str, object] = {}
+    runs_root = runs_storage(data_root)
     stages_root = data_root / "stages"
     if stages_root.exists():
         for prof_dir in sorted(stages_root.iterdir()):
@@ -557,9 +575,9 @@ def pipeline_status(data_root: Path) -> dict[str, object]:
                         "duration_s": m.get("duration_s"),
                         "outputs": [o["name"] for o in m.get("outputs", [])],
                     }
-            latest = data_root / "runs" / prof_dir.name / "latest.json"
+            latest = runs_root / prof_dir.name / "latest.json"
             out[prof_dir.name] = {
                 "stages": stages,
-                "latest_run": json.loads(latest.read_text())["run_id"] if latest.exists() else None,
+                "latest_run": latest.read_json()["run_id"] if latest.exists() else None,
             }
     return out

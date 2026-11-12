@@ -109,6 +109,31 @@ serves pre-gzipped), `curves.json`, `importance.json`, `scores.parquet`, and
 a `latest.json` pointer. `mpm/api.py` is deliberately thin; if the frontend
 needs new data, add it at publish time, not as API-side computation.
 
+### The storage seam (`src/mpm/storage.py`)
+
+Published runs are addressed through `Storage`, a thin shell over an fsspec
+filesystem, so `publish.py` and `api.py` work against a local directory or an
+S3 prefix unchanged. **Only the runs tree moves**: `MPM_RUNS_ROOT` (a path or
+`s3://bucket/prefix`) overrides `<data_root>/runs`, while the raw download
+cache and stage manifests stay on local disk, where rename atomicity and cheap
+stat calls are what freshness is built on.
+
+- **Reads stream.** `iter_chunks`/`open` are the default; `read_bytes` is for
+  small JSON pointers only. Serving `cells.json.gz` with a whole-body read is
+  a regression that passes every round-trip test, so `tests/test_api.py` pins
+  it by making `read_bytes` raise.
+- **Ordering is the transaction.** No multi-key atomicity, so publish writes
+  the immutable run dir first and `latest.json` last.
+- **S3 has no directories.** A run is identified by the `report.json` it
+  contains, not by its folder; `mkdir` is local-only (but `exist_ok=False`
+  still guards both backends).
+- `stage_train_publish` records a local `published.json` marker as its output,
+  not the run dir, because manifest freshness stats paths relative to the
+  stage dir. A **remote** runs root is therefore a fingerprint input, so
+  repointing at a bucket republishes; a local one is not, because absolute
+  paths differ between a host checkout and the bind mount.
+- Credentials come from botocore's chain, never from arguments.
+
 ### Frontend
 
 `web/`: React + react-router; `pages/Dashboard.jsx` (deck.gl H3 map + SVG

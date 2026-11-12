@@ -30,6 +30,16 @@
 x-python-env: &python-env
   MPM_DATA_ROOT: /data
   DATABASE_URL: postgresql://mpm:${POSTGRES_PASSWORD:-mpm}@postgres:5432/mpm
+  # Published runs only; unset keeps them on ./data. Set to an s3:// prefix to
+  # move the publish contract into object storage. Raw downloads and stage
+  # manifests stay on the volume either way.
+  MPM_RUNS_ROOT: ${MPM_RUNS_ROOT:-}
+  # Both spellings ride through; mpm.storage prefers AWS_ENDPOINT_URL.
+  AWS_ENDPOINT_URL: ${AWS_ENDPOINT_URL:-}
+  AWS_ENDPOINT: ${AWS_ENDPOINT:-}
+  AWS_REGION: ${AWS_REGION:-}
+  AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+  AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
 
 services:
   postgres:

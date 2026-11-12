@@ -13,15 +13,19 @@ The contract with the frontend, all JSON, all static, all cacheable:
 between {"h3":..,"score":..} and {"h":..,"s":..} is a megabyte on the wire.
 Schema: h=h3, s=geology score, u=ensemble spread, c=combined score,
 f=fold, y=label, t=hidden truth (synthetic cubes only).
+
+The run directory is addressed through :mod:`mpm.storage`, so the same code
+publishes to a local directory or an S3 prefix. Object storage has no
+transaction spanning keys, which makes the write order below load-bearing:
+the run directory lands first and ``latest.json`` is repointed last, so a
+crash midway leaves an orphan no reader can reach rather than a torn pointer.
 """
 
 from __future__ import annotations
 
-import gzip
 import json
 import logging
 import time
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -30,6 +34,7 @@ from mpm.config import Config
 from mpm.etl.stages import stable_hash
 from mpm.evaluate import capture_curve
 from mpm.pipeline import RunResult
+from mpm.storage import Storage, gzip_text_writer
 
 log = logging.getLogger("mpm.etl")
 
@@ -93,13 +98,12 @@ def publish_run(
     cfg: Config,
     profile_dict: dict,
     provenance: list[dict],
-    runs_root: Path,
-) -> Path:
+    runs_root: Storage,
+) -> Storage:
     """Write one immutable run directory and repoint ``latest.json`` at it."""
     runs = result["runs"]  # type: ignore[assignment]
     run_id = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()) + "-" + stable_hash(report)[:8]
-    outdir = runs_root / run_id
-    outdir.mkdir(parents=True, exist_ok=False)
+    outdir = (runs_root / run_id).mkdir(exist_ok=False)
 
     label_col = cfg.label_col
     full_report = {
@@ -111,20 +115,22 @@ def publish_run(
     (outdir / "report.json").write_text(json.dumps(full_report, indent=2, default=float))
 
     cells = _cells_records(runs["geology"], runs["combined"], label_col)
-    with gzip.open(outdir / "cells.json.gz", "wt") as f:
+    with gzip_text_writer(outdir / "cells.json.gz") as f:
         json.dump(cells, f, separators=(",", ":"))
 
     (outdir / "curves.json").write_text(json.dumps(_curves(runs, label_col), default=float))
     (outdir / "importance.json").write_text(json.dumps(_importance(result), default=float))
 
     # Machine-friendly copy of the full per-cell table, uncompacted.
-    pd.concat(
-        {name: run.scores.set_index("h3") for name, run in runs.items()},
-        names=["model", "h3"],
-    ).reset_index().to_parquet(outdir / "scores.parquet", index=False)
+    (outdir / "scores.parquet").write_parquet(
+        pd.concat(
+            {name: run.scores.set_index("h3") for name, run in runs.items()},
+            names=["model", "h3"],
+        ).reset_index(),
+        index=False,
+    )
 
-    tmp = runs_root / "latest.json.tmp"
-    tmp.write_text(json.dumps({"run_id": run_id}))
-    tmp.replace(runs_root / "latest.json")
-    log.info("published run %s (%d cells)", run_id, len(cells))
+    # Last: the pointer is what makes the run reachable.
+    (runs_root / "latest.json").write_text(json.dumps({"run_id": run_id}))
+    log.info("published run %s (%d cells) to %s", run_id, len(cells), outdir.uri)
     return outdir
