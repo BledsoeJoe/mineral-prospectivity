@@ -19,11 +19,17 @@ Please refrain from the use of any em dashes and use US english word choices.
 ## Commands
 
 Docker compose is the canonical environment (the local `.venv` may lack dev
-deps; `lightgbm` needs the `libgomp1` system package).
+deps; `lightgbm` needs the `libgomp1` system package). Base dependencies are
+only what the API needs; a local env for the pipeline needs the extras:
+`uv sync --extra model --extra dev --extra api --extra orchestration`.
 
 ```bash
 docker compose up --build                    # postgres + pipeline(synth) + dagster + api + web (127.0.0.1:8080; dagster UI at /dagster/)
 MPM_PROFILE=us-cu docker compose up --build  # real-data US copper profile
+
+# two-machine deploy: a node's .env sets COMPOSE_FILE, then plain compose commands work
+cp deploy/public.env.example .env   # or private.env.example
+docker compose up -d --build
 
 # tests + lint (run inside the image; postgres-backed tests skip without DATABASE_URL)
 docker compose run --rm pipeline sh -c "pytest -q && ruff check src tests"
@@ -47,8 +53,10 @@ docker compose exec postgres psql -U mpm mpm -c 'select run_id, profile from cat
 
 Compose builds a **separate image tag per service** from the same Dockerfile:
 after changing Python code, rebuild `pipeline`, `api`, AND `dagster`
-(`docker compose build pipeline api dagster`). After recreating the `api`
-container, restart `web` too; nginx resolves the upstream IP at startup.
+(`docker compose build pipeline api dagster`). `api` builds the slim `api`
+target (no model stack, no Dagster); the others build `full`. After recreating
+the `api` container, restart `web` too; nginx resolves the upstream IP at
+startup.
 
 ## Architecture
 
@@ -88,7 +96,7 @@ index, per-cell scores. All tables live in the **`catalog` schema** because
 Dagster's own storage owns `public.runs` in the same database; never create
 unqualified tables. Every function degrades gracefully without
 `DATABASE_URL` (file-mode fallback), which is why the test suite passes with
-or without postgres. Artifacts on the volume are the source of truth; the
+or without postgres. Published artifacts (volume or bucket) are the source of truth; the
 catalog is always rebuildable from them (`backfill-db`), never the reverse.
 
 User-added sources (`POST /api/sources`, or the frontend Architecture page)
@@ -99,7 +107,8 @@ suggestions live in `sources.SUGGESTED_SOURCES`; only add entries there after
 verifying the file downloads and parses with the current readers.
 `POST /api/materialize {profile}` launches a single-partition Dagster run via
 GraphQL (`orchestration/client.py`, `MPM_DAGSTER_URL`); the API container
-never runs the pipeline itself (its volume is read-only).
+never runs the pipeline itself (its volume is read-only). Source writes and
+materialize exist only in the `all` API role (see deployment roles below).
 
 ### Publish contract with the frontend
 
@@ -133,6 +142,37 @@ stat calls are what freshness is built on.
   repointing at a bucket republishes; a local one is not, because absolute
   paths differ between a host checkout and the bind mount.
 - Credentials come from botocore's chain, never from arguments.
+
+### Deployment roles (one machine or two)
+
+`docker-compose.yml` is the all-in-one stack. `deploy/compose.private.yml`
+(orchestration + operator console) and `deploy/compose.public.yml` (read-only
+api + web) `extends` its services, restating only what differs; a node's
+root `.env` selects its file via `COMPOSE_FILE`. The bucket is the only link:
+nothing on the public node can reach the private one.
+
+- **`MPM_API_ROLE=all|public`**. Write endpoints live on the `control`
+  router, which the public role never mounts (absent, not guarded). Add new
+  write routes to `control`; `tests/test_api.py` fails if the public route
+  table has anything but GET/HEAD. `create_app()` must stay last in `api.py`
+  because `include_router` copies routes at call time.
+- **Fail loudly, never stale quietly.** The public role refuses a local runs
+  root; both deploy files require `MPM_RUNS_ROOT`. The public file blanks
+  `DATABASE_URL`, since `db.available()` only checks that it is set.
+- **The API must import without `[model]`.** The public image has no numpy,
+  pandas, lightgbm, etc. Keep model imports out of the API's import graph;
+  this is why `mpm/etl/__init__.py` has no re-exports (it runs before every
+  `mpm.etl.*` import). A subprocess test blocks those modules and drives the
+  API.
+- **nginx**: `/dagster/` is `docker/nginx-dagster.conf`, mounted into
+  `/etc/nginx/mpm.d/` only where Dagster runs. Never reference a host in the
+  base config that the public node lacks: nginx fails to start, or resolves
+  the name to an unrelated LAN machine.
+- **Frontend**: `/api/health` reports `capabilities`; `web/src/capabilities.jsx`
+  shares them, and controls render only when the node can serve them.
+- The private file reuses the all-in-one project name on purpose, so a
+  converted box keeps its `pgdata` volume (user-registered sources cannot be
+  rebuilt from artifacts).
 
 ### Frontend
 

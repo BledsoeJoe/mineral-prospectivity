@@ -51,6 +51,10 @@ subdomain to localhost:8080"; the Dagster UI rides along at `/dagster/` on
 the same origin, behind the same TLS and auth, with no separate port open.
 (Set `MPM_BIND=0.0.0.0` only if you genuinely want the port exposed.)
 
+That is the all-in-one shape. The same services also deploy split across two
+machines, a private orchestration node and a small read-only public node with
+a bucket between them; see [Deploying on two machines](#deploying-on-two-machines).
+
 ```bash
 docker compose up --build         # synth profile -> 127.0.0.1:8080 (dagster at /dagster/)
 MPM_PROFILE=us-cu docker compose up --build   # real-data US copper cube
@@ -370,7 +374,8 @@ src/mpm/
   pipeline.py    CV orchestration, pooled metrics, discovery audit
   plots.py       map, capture curves, importance
   report.py      report assembly shared by CLI and pipeline
-  api.py         FastAPI service over published runs
+  api.py         FastAPI service over published runs; public or full role
+  storage.py     artifact addressing over a local directory or an S3 prefix
   db.py          optional Postgres catalog (sources, runs, cells); graceful file-mode fallback
   etl/
     sources.py   registry of upstream datasets (url, citation, optional pin)
@@ -385,8 +390,9 @@ src/mpm/
   orchestration/
     defs.py      Dagster asset graph over the stage functions (partitions = profiles)
 web/             React + deck.gl frontend (map + About/Research/Breakdown/Architecture)
-docker/          Dockerfiles, nginx config, dagster.yaml; docker-compose.yml at the root
-tests/           57 tests, focused on silent-failure paths
+docker/          Dockerfiles (api + full targets), nginx config + Dagster snippet, dagster.yaml
+deploy/          per-node compose files and .env templates; docker-compose.yml is all-in-one
+tests/           79 tests, focused on silent-failure paths
 scripts/         external-data preparation
 configs/         every knob that changes a result
 ```
@@ -419,39 +425,34 @@ paying off during development:
 - Buffering assumes isotropic distance. Geological continuity follows structure,
   not circles; a strike-aware buffer would be stricter and more correct.
 
-## Where this is going
+## Deploying on two machines
 
-Mostly not built yet, recorded here so the direction is legible. The storage
-seam described at the end is the exception: it is in the code. The branch
-checklist lives in `docs/ai-scaffold-pr.md`.
+The all-in-one stack runs pipeline, orchestrator, API and frontend on one
+machine, with one Postgres and one `./data` volume. That is the right shape for
+a demo and the wrong shape once there is real compute behind it. The
+orchestrator wants resources, credentials and privacy, and it can be the less
+reliable machine. The public read path wants none of those things, should stay
+up regardless, and should not be able to reach them.
 
-Everything above runs as a single unit: pipeline, orchestrator, API and frontend
-sharing one machine, one Postgres, and one `./data` volume. That is the right
-shape for a demo and the wrong shape once there is real compute behind it. The
-orchestrator wants resources, credentials and privacy. The public read path wants
-none of those things and should not be able to reach them.
+| Node | Runs | Holds |
+|---|---|---|
+| **Private** (`deploy/compose.private.yml`) | Postgres, the pipeline, Dagster and its daemon, an operator copy of the app | the source catalog, Dagster history, raw cache and stage manifests, a read-write bucket key |
+| **Public** (`deploy/compose.public.yml`) | the API (read-only role, slim image) and the frontend | a read-only bucket key, nothing else |
 
-The split:
-
-- **A private orchestration system.** Dagster, the pipeline, and their own
-  Postgres, sized for the work and not publicly reachable. It holds the upstream
-  fetch credentials and does all of the writing.
-- **A public application system.** The FastAPI service and the frontend, low
-  resource, read only, with no route back into the private side.
-- **S3 as the boundary.** `etl/publish.py` already writes immutable run
-  directories plus a small `latest.json` pointer, which is the shape object
-  storage wants. Putting them in a bucket makes the published run the contract
-  between the two systems instead of a shared filesystem.
-
-The prerequisite was a storage seam, and that part is built. `src/mpm/storage.py`
-addresses artifacts through a small `Storage` interface over a local directory
-or an S3 prefix, and `etl/publish.py` and `mpm/api.py` both go through it. One
-environment variable moves the boundary:
+**S3 is the boundary.** `etl/publish.py` writes immutable run directories plus
+a small `latest.json` pointer, which is the shape object storage wants, and
+`src/mpm/storage.py` addresses them through one `Storage` interface over a
+local directory or an S3 prefix. One variable moves the boundary:
 
 ```bash
 MPM_RUNS_ROOT=s3://bucket/mineral-prospectivity/runs   # path, or s3:// URI
 AWS_ENDPOINT_URL=https://us-east-1.linodeobjects.com   # any S3-compatible store
 ```
+
+Nothing flows from public to private. The private node pushes finished runs
+into the bucket and the public node only reads them, so if the private node is
+down the public site keeps serving the last published run: the pointer that
+names it lives in the bucket, not on the machine that wrote it.
 
 Deliberately, only the *published runs* move. The raw download cache and the
 stage manifests stay on the private side's local disk, because stage freshness
@@ -466,8 +467,77 @@ object's size. And once `scores.parquet` lives in object storage, the bucket is
 a data product boundary rather than shared disk, so a notebook, DuckDB or a BI
 tool can read a published run directly without going through the app.
 
-Still on the private side and still local: the stage manifests, the raw cache,
-and Dagster's own storage. Splitting those is the next step, not this one.
+### Bringing it up
+
+Each node is a checkout of this repo with its own `.env`. The `.env` also
+names the node's compose file through `COMPOSE_FILE`, so plain `docker compose`
+commands always act on the right project.
+
+1. Create the bucket and two keys scoped to it: read-write for the private
+   node, read-only for the public one (on Linode Object Storage, "limited"
+   access keys).
+2. Private node:
+   ```bash
+   cp deploy/private.env.example .env   # bucket prefix, read-write key, postgres password
+   docker compose up -d --build         # the one-shot pipeline publishes the first run
+   ```
+3. Public node:
+   ```bash
+   cp deploy/public.env.example .env    # same prefix, read-only key
+   docker compose up -d --build
+   curl -s localhost:8080/api/health    # "role": "public", capabilities all false, profiles listed
+   ```
+
+Both web services bind to loopback. Put the host's TLS reverse proxy in front
+of the public one. The private one is for operators: tunnel in with
+`ssh -L 8080:localhost:8080 <private-node>` for the full app, the source
+catalog controls, and Dagster at `/dagster/`.
+
+Converting an existing all-in-one box into the private node keeps its Postgres
+volume, because the private file reuses the same compose project name. That is
+deliberate: user-registered sources live only in the catalog, and no artifact
+can rebuild them.
+
+### What keeps the split honest
+
+The failure worth designing against is a public node that quietly does the
+wrong thing, so each boundary either fails loudly or does not exist:
+
+- **Control routes are absent, not guarded.** `MPM_API_ROLE=public` never
+  mounts source registration or materialize, so there is nothing to probe. A
+  test asserts the public route table is GET-only, so a write route added to
+  the wrong router later fails CI.
+- **No bucket, no start.** The public role refuses a local runs root, and both
+  compose files refuse to interpolate without `MPM_RUNS_ROOT`. Otherwise a
+  missing variable reads as "nothing published yet", or the private node
+  publishes somewhere the public one cannot see.
+- **nginx never hears of Dagster.** The `/dagster/` proxy is a snippet
+  (`docker/nginx-dagster.conf`) mounted only where Dagster runs. A config naming
+  a missing host either stops nginx from starting or, worse, resolves the name
+  to some other machine on the network; testing this split hit exactly that.
+- **The frontend asks before offering.** `/api/health` reports `capabilities`,
+  and controls and Dagster links render only where the node can serve them.
+- **The public image has no model stack.** The API needs only the base
+  dependencies plus `[api]`; the model stack lives in the `[model]` extra, so
+  the public image is 356 MB instead of 1.47 GB. A test blocks the model modules
+  in a subprocess and drives the API, because the test image has all of them
+  and a stray import would pass everywhere except production.
+
+### Still local, and what is next
+
+- The stage manifests, the raw cache, and Dagster's storage stay on the private
+  node's local disk. Splitting those is a separate step.
+- The public site is read-only by design; sources and rebuilds go through the
+  operator console. Offering them publicly without opening a route back would
+  mean the public API writing requests into a bucket and a Dagster sensor on
+  the private side pulling them, which is its own piece of work with its own
+  abuse questions.
+- `/api/profiles` lists the bucket and reads each profile's pointer and report
+  on every request. A short-lived cache would cut that latency, and long-lived
+  cache headers on run-id-addressed artifacts (which are immutable) would let a
+  CDN carry most of the load.
+
+The broader post-merge checklist lives in `docs/ai-scaffold-pr.md`.
 
 ## References
 

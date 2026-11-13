@@ -309,6 +309,20 @@ export default function Architecture() {
           Dagster UI is the operational surface.
         </p>
 
+        <h3>One machine or two</h3>
+        <p>
+          The same services also split across two machines with an S3 bucket
+          between them. A private node, sized for the work and allowed to be
+          the less reliable one, runs Postgres, the pipeline and Dagster, and
+          publishes finished runs into the bucket. A small public node runs
+          only the API and this app, reading those runs with a read-only key.
+          Nothing flows back: the public API does not even register the routes
+          that write, its image carries no model code, and if the private node
+          goes down the public site keeps serving the last published run.
+          Source management and rebuilds happen on an operator copy of this
+          app on the private node.
+        </p>
+
         <h2>The pipeline</h2>
         <pre>{`acquire ──┬─ labels ────┐            per-stage manifest.json:
           ├─ geophys ───┤              inputs (sha256 of upstream files)
