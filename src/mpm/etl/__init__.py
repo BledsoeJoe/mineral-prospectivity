@@ -1,4 +1,4 @@
-"""Structured ingest pipeline: acquire -> validate -> grid -> assemble -> train -> publish.
+"""Staged ingest pipeline: acquire -> validate -> grid -> assemble -> train -> publish.
 
 The model code in :mod:`mpm` answers "is this map honest?". This package answers
 the operational question that comes before it: *where did the cube come from,

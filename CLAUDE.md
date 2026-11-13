@@ -7,11 +7,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 A demonstration project (job application to KoBold Metals) for mineral
 prospectivity mapping: a staged ingest pipeline over open USGS data, a
 positive-unlabeled LightGBM model with spatial cross-validation, a FastAPI
-artifact server, and a React + deck.gl frontend. The project's identity is
-*honest evaluation*: much of the code exists to prevent three failure modes
-(PU labels treated as negatives, spatial CV leakage, exploration-effort bias),
-and the README/frontend prose documents those decisions deliberately. Keep
-that voice: docstrings explain *why*, and judgment calls are written down.
+artifact server, and a React + deck.gl frontend. It is presented as a **data
+engineering** project (the role applied for is data systems): the README and
+the About/Breakdown pages lead with ingestion, data quality, publishing runs
+as a data product, and the move from one machine to two over S3; modeling
+detail lives in the README's later sections and the Research page. The modeling
+code's identity is *honest evaluation*: much of it exists to prevent three
+failure modes (PU labels treated as negatives, spatial CV leakage,
+exploration-effort bias). Keep that voice everywhere: docstrings explain *why*,
+and judgment calls are written down. Keep employer-specific project names off
+the site and out of the repo.
 
 ## Style
 Please refrain from the use of any em dashes and use US english word choices.

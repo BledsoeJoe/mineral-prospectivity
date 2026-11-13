@@ -1,24 +1,32 @@
 # Mineral prospectivity mapping, done honestly
 
-An end-to-end system that ranks ground by its chance of hosting an undiscovered
-mineral deposit, and, more to the point, a set of controls for the three ways
-this task quietly goes wrong.
+An end-to-end data system over open USGS mineral exploration data. A staged
+pipeline acquires, validates and cleans public datasets, joins them onto a
+common hexagonal grid, trains a deliberately simple prospectivity model, and
+publishes each run as a versioned data product. The app that serves those runs
+deploys on one machine or across two, with object storage between them.
 
-The modeling here is deliberately unexciting: gradient-boosted trees on a
-hexagonal grid. The interesting work is everything around it. A naive version of
-this project reports ROC-AUC of 0.98 and produces a map that is worthless on any
-ground you have not already drilled. This one reports 0.95 and explains the
-difference.
+The model is the least interesting part: gradient-boosted trees on a hexagonal
+grid. The work is in the data around it (where each file came from, what is
+wrong with it, how a label is defined, how a run is published) and in the
+evaluation controls that keep the result honest. A naive version of this project
+reports ROC-AUC of 0.98 and produces a map that is worthless on any ground you
+have not already drilled. This one reports 0.95 and explains the difference.
 
-> **Provenance:** this is an exploratory project, built in a few working
-> sessions with heavy assistance from an AI coding agent (Anthropic's Claude).
-> The direction, the judgment calls (label definitions, covariate quarantine,
-> what counts as a leak), and the verification are mine; most of the
-> line-by-line code is not. The app's About page carries the full version.
+> **Provenance:** an exploratory project built with heavy assistance from an AI
+> coding agent (Anthropic's Claude); most of the code was not written by me line
+> by line. In the first version the agent also made most of the technical calls
+> (datasets, label definitions, which covariates count as effort, catching its
+> own label leak). Mine were the purpose and scope, the system's shape, the
+> deployment target and security fixes, and the Dagster, Postgres and
+> runtime-source requirements. Since then I have extended it as an inherited
+> codebase in small, reviewed changes, including the move to object storage and
+> two machines. The app's About page carries the full version, and
+> `docs/ai-scaffold-pr.md` the original provenance.
 
 Six services, one compose file:
 
-- **`mpm etl` + Dagster**: a structured ingest pipeline that *acquires* open
+- **`mpm etl` + Dagster**: a staged ingest pipeline that *acquires* open
   USGS data (checksummed, cached, retried), *validates* it through
   data-quality gates, *cleans* it (censored geochemistry, BOM'd headers, Null
   Island coordinates, free-text commodity fields), assembles an H3 datacube,
@@ -75,6 +83,201 @@ secrecy. Without it every data layer still renders and the basemap tiles come
 back watermarked.
 
 ![the app](docs/app.png)
+
+---
+
+## The ingest pipeline
+
+`mpm etl` is the production-shaped part of the repo: a staged, manifest-driven
+pipeline that acquires, validates, cleans, grids, trains and publishes.
+
+```
+acquire ──┬─ labels ────┐
+          ├─ geophys ───┤
+          ├─ geochem ───┼─ cube ── train ── publish
+          └─ extras ────┘
+```
+
+```bash
+python -m mpm etl profiles                          # what can be built
+python -m mpm etl run --profile us-cu --data-root data
+python -m mpm etl status --data-root data           # stage freshness, latest runs
+python -m mpm etl run --profile us-cu --force cube  # surgical rebuild
+python -m mpm etl backfill-db --data-root data      # rebuild catalog from artifacts
+
+# the same stages, orchestrated (lineage, partitions, schedule):
+dagster dev -f src/mpm/orchestration/defs.py
+```
+
+`extras` are sources registered at runtime in the Postgres catalog (via the
+web UI's Architecture page or `POST /api/sources`): additional `xyz_grid`
+files or NGDB-style `ngdb_geochem` zips from allowlisted hosts. The covariate
+name you give a source decides which side of the bias audit it lands on; the
+quarantine list is the arbiter, visibly.
+
+The `us-cu` profile builds a conterminous-US copper cube from scratch, from
+four open USGS sources (~220 MB total, fetched once and cached):
+
+| source | role | the cleaning it needs |
+|---|---|---|
+| MRDS occurrences | labels + effort proxies | free-text commodities, Null Island rows, name dedup, prod-size filter |
+| aeromagnetic grid | covariate | headerless lon/lat/nT triples → per-cell mean + roughness |
+| gravity grids (isostatic, Bouguer) | covariates | same |
+| NGDB stream sediments | covariates + effort | censored values encoded as *negative detection limits*, mixed ppm/pct units, log-normal tails |
+
+Design decisions worth defending in conversation:
+
+- **Positives are Large/Medium producers only** (323 cells, 1-in-124 base
+  rate). Include every "small producer" and the label set balloons to 2,630
+  cells of one-adit historical workings; the label stops meaning *orebody*.
+- **`dist_to_deposit_km` is computed leave-self-out.** The first version
+  wasn't, which made the column a copy of the label and the combined model a
+  perfect-scoring fraud (PR-AUC 1.000). The test suite now pins this.
+- **Missingness indicators are quarantined as effort.** "No geochem sample
+  here" is a fact about surveying, not rocks; `_isna` flags go to the audit
+  model, never the headline model.
+- **Stage manifests store paths relative to the stage directory**, so the same
+  data volume is fresh whether the pipeline ran on the host or in a container.
+- **Checksums are recorded, not pinned** (USGS revises compilations in place);
+  a changed upstream file automatically invalidates exactly the stages built
+  from it. Pin `sha256` in `sources.py` to freeze a vintage.
+
+On that real cube, the honest headline is capture@5% = 0.42 (geology only,
+spatial CV, top drivers: Bouguer gravity, Cu/Zn/As stream-sediment
+geochemistry). The bias audit then shows what contamination buys: add effort
+proxies and capture jumps to 0.78 with 82% of model importance sitting on
+effort covariates: a model that would send every drill rig to ground the
+industry already knows. The controls behind these numbers are covered in
+[The three problems](#the-three-problems).
+
+## Deploying on two machines
+
+The all-in-one stack runs pipeline, orchestrator, API and frontend on one
+machine, with one Postgres and one `./data` volume. That is the right shape for
+a demo and the wrong shape once there is real compute behind it. The
+orchestrator wants resources, credentials and privacy, and it can be the less
+reliable machine. The public read path wants none of those things, should stay
+up regardless, and should not be able to reach them.
+
+| Node | Runs | Holds |
+|---|---|---|
+| **Private** (`deploy/compose.private.yml`) | Postgres, the pipeline, Dagster and its daemon, an operator copy of the app | the source catalog, Dagster history, raw cache and stage manifests, a read-write bucket key |
+| **Public** (`deploy/compose.public.yml`) | the API (read-only role, slim image) and the frontend | a read-only bucket key, nothing else |
+
+**S3 is the boundary.** `etl/publish.py` writes immutable run directories plus
+a small `latest.json` pointer, which is the shape object storage wants, and
+`src/mpm/storage.py` addresses them through one `Storage` interface over a
+local directory or an S3 prefix. One variable moves the boundary:
+
+```bash
+MPM_RUNS_ROOT=s3://bucket/mineral-prospectivity/runs   # path, or s3:// URI
+AWS_ENDPOINT_URL=https://us-east-1.linodeobjects.com   # any S3-compatible store
+```
+
+Nothing flows from public to private. The private node pushes finished runs
+into the bucket and the public node only reads them, so if the private node is
+down the public site keeps serving the last published run: the pointer that
+names it lives in the bucket, not on the machine that wrote it.
+
+Deliberately, only the *published runs* move. The raw download cache and the
+stage manifests stay on the private side's local disk, because stage freshness
+is built on rename atomicity and cheap stat calls, and object storage offers
+neither. What crosses the boundary is the finished artifact, which is the thing
+the two systems actually need to agree on.
+
+Two consequences worth naming. The API reads artifacts in bounded chunks rather
+than loading them, which is what lets the public node be small: streaming a
+192 MB object peaks at about 7 MB of process memory instead of tracking the
+object's size. And once `scores.parquet` lives in object storage, the bucket is
+a data product boundary rather than shared disk, so a notebook, DuckDB or a BI
+tool can read a published run directly without going through the app.
+
+### Bringing it up
+
+Each node is a checkout of this repo with its own `.env`. The `.env` also
+names the node's compose file through `COMPOSE_FILE`, so plain `docker compose`
+commands always act on the right project.
+
+1. Create the bucket and two keys scoped to it: read-write for the private
+   node, read-only for the public one (on Linode Object Storage, "limited"
+   access keys).
+2. Private node:
+   ```bash
+   cp deploy/private.env.example .env   # bucket prefix, read-write key, postgres password
+   docker compose up -d --build         # the one-shot pipeline publishes the first run
+   ```
+3. Public node:
+   ```bash
+   cp deploy/public.env.example .env    # same prefix, read-only key
+   docker compose up -d --build
+   curl -s localhost:8080/api/health    # "role": "public", capabilities all false, profiles listed
+   ```
+
+Both web services bind to loopback. Put the host's TLS reverse proxy in front
+of the public one. The private one is for operators: tunnel in with
+`ssh -L 8080:localhost:8080 <private-node>` for the full app, the source
+catalog controls, and Dagster at `/dagster/`.
+
+Converting an existing all-in-one box into the private node keeps its Postgres
+volume, because the private file reuses the same compose project name. That is
+deliberate: user-registered sources live only in the catalog, and no artifact
+can rebuild them.
+
+### What keeps the split honest
+
+The failure worth designing against is a public node that quietly does the
+wrong thing, so each boundary either fails loudly or does not exist:
+
+- **Control routes are absent, not guarded.** `MPM_API_ROLE=public` never
+  mounts source registration or materialize, so there is nothing to probe. A
+  test asserts the public route table is GET-only, so a write route added to
+  the wrong router later fails CI.
+- **No bucket, no start.** The public role refuses a local runs root, and both
+  compose files refuse to interpolate without `MPM_RUNS_ROOT`. Otherwise a
+  missing variable reads as "nothing published yet", or the private node
+  publishes somewhere the public one cannot see.
+- **nginx never hears of Dagster.** The `/dagster/` proxy is a snippet
+  (`docker/nginx-dagster.conf`) mounted only where Dagster runs. A config naming
+  a missing host either stops nginx from starting or, worse, resolves the name
+  to some other machine on the network; testing this split hit exactly that.
+- **The frontend asks before offering.** `/api/health` reports `capabilities`,
+  and controls and Dagster links render only where the node can serve them.
+- **The public image has no model stack.** The API needs only the base
+  dependencies plus `[api]`; the model stack lives in the `[model]` extra, so
+  the public image is 356 MB instead of 1.47 GB. A test blocks the model modules
+  in a subprocess and drives the API, because the test image has all of them
+  and a stray import would pass everywhere except production.
+
+### Still local, and what is next
+
+- The stage manifests, the raw cache, and Dagster's storage stay on the private
+  node's local disk. Splitting those is a separate step.
+- The public site is read-only by design; sources and rebuilds go through the
+  operator console. Offering them publicly without opening a route back would
+  mean the public API writing requests into a bucket and a Dagster sensor on
+  the private side pulling them, which is its own piece of work with its own
+  abuse questions.
+- `/api/profiles` lists the bucket and reads each profile's pointer and report
+  on every request. A short-lived cache would cut that latency, and long-lived
+  cache headers on run-id-addressed artifacts (which are immutable) would let a
+  CDN carry most of the load.
+
+The broader post-merge checklist lives in `docs/ai-scaffold-pr.md`.
+
+## The web app
+
+`docker compose up` brings up the whole stack: Postgres, the one-shot pipeline,
+the Dagster webserver and its daemon, the API, and nginx serving the built React
+app (proxying `/api` and `/dagster/`).
+
+- **Map**: score surface (percentile-binned sequential ramp), ensemble
+  disagreement, and the spatial CV blocks; known deposits and, on the
+  synthetic profile, the undiscovered ones the model has never seen. The
+  "top N%" slider is the drill-shortlist view: everything else fades out.
+- **Panels**: pooled metrics, capture curves with the 5% operating point,
+  the exploration-bias audit, validation-honesty (spatial vs random CV), the
+  discovery audit, covariate importance colored geology-vs-effort, and the
+  provenance of every byte that went into the run.
 
 ---
 
@@ -243,84 +446,6 @@ reporting AUC of 0.99 are usually reporting leakage.
 
 ---
 
-## The ingest pipeline
-
-`mpm etl` is the production-shaped part of the repo: a staged, manifest-driven
-pipeline in the spirit of a structured ingest system.
-
-```
-acquire ──┬─ labels ────┐
-          ├─ geophys ───┤
-          ├─ geochem ───┼─ cube ── train ── publish
-          └─ extras ────┘
-```
-
-```bash
-python -m mpm etl profiles                          # what can be built
-python -m mpm etl run --profile us-cu --data-root data
-python -m mpm etl status --data-root data           # stage freshness, latest runs
-python -m mpm etl run --profile us-cu --force cube  # surgical rebuild
-python -m mpm etl backfill-db --data-root data      # rebuild catalog from artifacts
-
-# the same stages, orchestrated (lineage, partitions, schedule):
-dagster dev -f src/mpm/orchestration/defs.py
-```
-
-`extras` are sources registered at runtime in the Postgres catalog (via the
-web UI's Architecture page or `POST /api/sources`): additional `xyz_grid`
-files or NGDB-style `ngdb_geochem` zips from allowlisted hosts. The covariate
-name you give a source decides which side of the bias audit it lands on; the
-quarantine list is the arbiter, visibly.
-
-The `us-cu` profile builds a conterminous-US copper cube from scratch, from
-four open USGS sources (~220 MB total, fetched once and cached):
-
-| source | role | the cleaning it needs |
-|---|---|---|
-| MRDS occurrences | labels + effort proxies | free-text commodities, Null Island rows, name dedup, prod-size filter |
-| aeromagnetic grid | covariate | headerless lon/lat/nT triples → per-cell mean + roughness |
-| gravity grids (isostatic, Bouguer) | covariates | same |
-| NGDB stream sediments | covariates + effort | censored values encoded as *negative detection limits*, mixed ppm/pct units, log-normal tails |
-
-Design decisions worth defending in conversation:
-
-- **Positives are Large/Medium producers only** (323 cells, 1-in-124 base
-  rate). Include every "small producer" and the label set balloons to 2,630
-  cells of one-adit historical workings; the label stops meaning *orebody*.
-- **`dist_to_deposit_km` is computed leave-self-out.** The first version
-  wasn't, which made the column a copy of the label and the combined model a
-  perfect-scoring fraud (PR-AUC 1.000). The test suite now pins this.
-- **Missingness indicators are quarantined as effort.** "No geochem sample
-  here" is a fact about surveying, not rocks; `_isna` flags go to the audit
-  model, never the headline model.
-- **Stage manifests store paths relative to the stage directory**, so the same
-  data volume is fresh whether the pipeline ran on the host or in a container.
-- **Checksums are recorded, not pinned** (USGS revises compilations in place);
-  a changed upstream file automatically invalidates exactly the stages built
-  from it. Pin `sha256` in `sources.py` to freeze a vintage.
-
-On that real cube, the honest headline is capture@5% = 0.42 (geology only,
-spatial CV, top drivers: Bouguer gravity, Cu/Zn/As stream-sediment
-geochemistry). The bias audit then shows what contamination buys: add effort
-proxies and capture jumps to 0.78 with 82% of model importance sitting on
-effort covariates: a model that would send every drill rig to ground the
-industry already knows.
-
-## The web app
-
-`docker compose up` brings up the whole stack: Postgres, the one-shot pipeline,
-the Dagster webserver and its daemon, the API, and nginx serving the built React
-app (proxying `/api` and `/dagster/`).
-
-- **Map**: score surface (percentile-binned sequential ramp), ensemble
-  disagreement, and the spatial CV blocks; known deposits and, on the
-  synthetic profile, the undiscovered ones the model has never seen. The
-  "top N%" slider is the drill-shortlist view: everything else fades out.
-- **Panels**: pooled metrics, capture curves with the 5% operating point,
-  the exploration-bias audit, validation-honesty (spatial vs random CV), the
-  discovery audit, covariate importance colored geology-vs-effort, and the
-  provenance of every byte that went into the run.
-
 ## Real data, other routes
 
 `scripts/prepare_cube.py` still converts externally downloaded datasets into
@@ -424,120 +549,6 @@ paying off during development:
   generalisation across positives, not the discovery rate.
 - Buffering assumes isotropic distance. Geological continuity follows structure,
   not circles; a strike-aware buffer would be stricter and more correct.
-
-## Deploying on two machines
-
-The all-in-one stack runs pipeline, orchestrator, API and frontend on one
-machine, with one Postgres and one `./data` volume. That is the right shape for
-a demo and the wrong shape once there is real compute behind it. The
-orchestrator wants resources, credentials and privacy, and it can be the less
-reliable machine. The public read path wants none of those things, should stay
-up regardless, and should not be able to reach them.
-
-| Node | Runs | Holds |
-|---|---|---|
-| **Private** (`deploy/compose.private.yml`) | Postgres, the pipeline, Dagster and its daemon, an operator copy of the app | the source catalog, Dagster history, raw cache and stage manifests, a read-write bucket key |
-| **Public** (`deploy/compose.public.yml`) | the API (read-only role, slim image) and the frontend | a read-only bucket key, nothing else |
-
-**S3 is the boundary.** `etl/publish.py` writes immutable run directories plus
-a small `latest.json` pointer, which is the shape object storage wants, and
-`src/mpm/storage.py` addresses them through one `Storage` interface over a
-local directory or an S3 prefix. One variable moves the boundary:
-
-```bash
-MPM_RUNS_ROOT=s3://bucket/mineral-prospectivity/runs   # path, or s3:// URI
-AWS_ENDPOINT_URL=https://us-east-1.linodeobjects.com   # any S3-compatible store
-```
-
-Nothing flows from public to private. The private node pushes finished runs
-into the bucket and the public node only reads them, so if the private node is
-down the public site keeps serving the last published run: the pointer that
-names it lives in the bucket, not on the machine that wrote it.
-
-Deliberately, only the *published runs* move. The raw download cache and the
-stage manifests stay on the private side's local disk, because stage freshness
-is built on rename atomicity and cheap stat calls, and object storage offers
-neither. What crosses the boundary is the finished artifact, which is the thing
-the two systems actually need to agree on.
-
-Two consequences worth naming. The API reads artifacts in bounded chunks rather
-than loading them, which is what lets the public node be small: streaming a
-192 MB object peaks at about 7 MB of process memory instead of tracking the
-object's size. And once `scores.parquet` lives in object storage, the bucket is
-a data product boundary rather than shared disk, so a notebook, DuckDB or a BI
-tool can read a published run directly without going through the app.
-
-### Bringing it up
-
-Each node is a checkout of this repo with its own `.env`. The `.env` also
-names the node's compose file through `COMPOSE_FILE`, so plain `docker compose`
-commands always act on the right project.
-
-1. Create the bucket and two keys scoped to it: read-write for the private
-   node, read-only for the public one (on Linode Object Storage, "limited"
-   access keys).
-2. Private node:
-   ```bash
-   cp deploy/private.env.example .env   # bucket prefix, read-write key, postgres password
-   docker compose up -d --build         # the one-shot pipeline publishes the first run
-   ```
-3. Public node:
-   ```bash
-   cp deploy/public.env.example .env    # same prefix, read-only key
-   docker compose up -d --build
-   curl -s localhost:8080/api/health    # "role": "public", capabilities all false, profiles listed
-   ```
-
-Both web services bind to loopback. Put the host's TLS reverse proxy in front
-of the public one. The private one is for operators: tunnel in with
-`ssh -L 8080:localhost:8080 <private-node>` for the full app, the source
-catalog controls, and Dagster at `/dagster/`.
-
-Converting an existing all-in-one box into the private node keeps its Postgres
-volume, because the private file reuses the same compose project name. That is
-deliberate: user-registered sources live only in the catalog, and no artifact
-can rebuild them.
-
-### What keeps the split honest
-
-The failure worth designing against is a public node that quietly does the
-wrong thing, so each boundary either fails loudly or does not exist:
-
-- **Control routes are absent, not guarded.** `MPM_API_ROLE=public` never
-  mounts source registration or materialize, so there is nothing to probe. A
-  test asserts the public route table is GET-only, so a write route added to
-  the wrong router later fails CI.
-- **No bucket, no start.** The public role refuses a local runs root, and both
-  compose files refuse to interpolate without `MPM_RUNS_ROOT`. Otherwise a
-  missing variable reads as "nothing published yet", or the private node
-  publishes somewhere the public one cannot see.
-- **nginx never hears of Dagster.** The `/dagster/` proxy is a snippet
-  (`docker/nginx-dagster.conf`) mounted only where Dagster runs. A config naming
-  a missing host either stops nginx from starting or, worse, resolves the name
-  to some other machine on the network; testing this split hit exactly that.
-- **The frontend asks before offering.** `/api/health` reports `capabilities`,
-  and controls and Dagster links render only where the node can serve them.
-- **The public image has no model stack.** The API needs only the base
-  dependencies plus `[api]`; the model stack lives in the `[model]` extra, so
-  the public image is 356 MB instead of 1.47 GB. A test blocks the model modules
-  in a subprocess and drives the API, because the test image has all of them
-  and a stray import would pass everywhere except production.
-
-### Still local, and what is next
-
-- The stage manifests, the raw cache, and Dagster's storage stay on the private
-  node's local disk. Splitting those is a separate step.
-- The public site is read-only by design; sources and rebuilds go through the
-  operator console. Offering them publicly without opening a route back would
-  mean the public API writing requests into a bucket and a Dagster sensor on
-  the private side pulling them, which is its own piece of work with its own
-  abuse questions.
-- `/api/profiles` lists the bucket and reads each profile's pointer and report
-  on every request. A short-lived cache would cut that latency, and long-lived
-  cache headers on run-id-addressed artifacts (which are immutable) would let a
-  CDN carry most of the load.
-
-The broader post-merge checklist lives in `docs/ai-scaffold-pr.md`.
 
 ## References
 

@@ -194,7 +194,7 @@ def main(argv: list[str] | None = None) -> None:
     t.add_argument("--top", type=float, default=0.02)
     t.set_defaults(func=cmd_targets)
 
-    e = sub.add_parser("etl", help="structured ingest pipeline (acquire -> ... -> publish)")
+    e = sub.add_parser("etl", help="staged ingest pipeline (acquire -> ... -> publish)")
     esub = e.add_subparsers(dest="etl_cmd", required=True)
 
     er = esub.add_parser("run", help="run a pipeline profile end to end")
