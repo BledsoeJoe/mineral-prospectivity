@@ -1,0 +1,27 @@
+# Public node: the read-only app, small and always up. Serves published runs
+# straight from the bucket. No Postgres, no data volume, no Dagster, and no
+# route back to the private node.
+#
+#   cp deploy/public.env.example .env    # then fill it in
+#   docker compose up -d --build
+#
+# Definitions extend ../docker-compose.yml; only what differs here is restated.
+name: mpm-public
+
+services:
+  api:
+    extends: {file: ../docker-compose.yml, service: api}
+    environment:
+      MPM_API_ROLE: public
+      MPM_RUNS_ROOT: ${MPM_RUNS_ROOT:?set MPM_RUNS_ROOT to the prefix the private node publishes to}
+      # Blank, not inherited: a set URL makes the catalog look available and
+      # every /api/sources call would try to reach a postgres that is not here.
+      DATABASE_URL: ""
+    volumes: !reset []
+    depends_on: !reset []
+
+  web:
+    extends: {file: ../docker-compose.yml, service: web}
+    # Drops the /dagster/ snippet, so nginx never references that host.
+    volumes: !reset []
+    depends_on: !override [api]
