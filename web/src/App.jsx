@@ -5,8 +5,10 @@ import About from './pages/About.jsx'
 import Research from './pages/Research.jsx'
 import Breakdown from './pages/Breakdown.jsx'
 import Architecture from './pages/Architecture.jsx'
+import { CapabilitiesProvider, useCapabilities } from './capabilities.jsx'
 
 function Nav() {
+  const caps = useCapabilities()
   return (
     <header className="topbar">
       <h1>Mineral prospectivity</h1>
@@ -17,9 +19,11 @@ function Nav() {
         <NavLink to="/architecture">Architecture</NavLink>
         <NavLink to="/about">About</NavLink>
         {/* served by this app's nginx, so it sits behind the same auth */}
-        <a href="/dagster/" target="_blank" rel="noreferrer" className="ext">
-          Dagster ↗
-        </a>
+        {caps?.dagster_ui && (
+          <a href="/dagster/" target="_blank" rel="noreferrer" className="ext">
+            Dagster ↗
+          </a>
+        )}
       </nav>
     </header>
   )
@@ -28,16 +32,18 @@ function Nav() {
 export default function App() {
   return (
     <BrowserRouter>
-      <div className="app">
-        <Nav />
-        <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/breakdown" element={<Breakdown />} />
-          <Route path="/research" element={<Research />} />
-          <Route path="/architecture" element={<Architecture />} />
-          <Route path="/about" element={<About />} />
-        </Routes>
-      </div>
+      <CapabilitiesProvider>
+        <div className="app">
+          <Nav />
+          <Routes>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/breakdown" element={<Breakdown />} />
+            <Route path="/research" element={<Research />} />
+            <Route path="/architecture" element={<Architecture />} />
+            <Route path="/about" element={<About />} />
+          </Routes>
+        </div>
+      </CapabilitiesProvider>
     </BrowserRouter>
   )
 }

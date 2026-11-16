@@ -1,5 +1,6 @@
-// Thin client for the read-only artifacts API. Everything is origin-relative:
-// vite proxies /api in dev, nginx proxies it in the compose stack.
+// Thin client for the artifacts API. Everything is origin-relative: vite
+// proxies /api in dev, nginx proxies it in the compose stack. The write calls
+// exist only on the operator deployment; check useCapabilities() first.
 
 async function getJson(url) {
   const res = await fetch(url)
@@ -7,6 +8,7 @@ async function getJson(url) {
   return res.json()
 }
 
+export const fetchHealth = () => getJson('/api/health')
 export const fetchProfiles = () => getJson('/api/profiles')
 export const fetchReport = (profile) => getJson(`/api/profiles/${profile}/runs/latest/report`)
 export const fetchSources = () => getJson('/api/sources')

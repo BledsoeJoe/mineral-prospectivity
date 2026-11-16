@@ -139,7 +139,7 @@ def _print_report(report: dict) -> None:
 
 
 def cmd_etl_run(args: argparse.Namespace) -> None:
-    from mpm.etl import run_pipeline
+    from mpm.etl.flow import run_pipeline
 
     summary = run_pipeline(
         args.profile,
@@ -157,7 +157,7 @@ def cmd_etl_status(args: argparse.Namespace) -> None:
 
 
 def cmd_etl_profiles(args: argparse.Namespace) -> None:
-    from mpm.etl import PROFILES
+    from mpm.etl.profiles import PROFILES
 
     for p in PROFILES.values():
         print(f"{p.name:<10} [{p.kind}]  {p.description}")
@@ -194,7 +194,7 @@ def main(argv: list[str] | None = None) -> None:
     t.add_argument("--top", type=float, default=0.02)
     t.set_defaults(func=cmd_targets)
 
-    e = sub.add_parser("etl", help="structured ingest pipeline (acquire -> ... -> publish)")
+    e = sub.add_parser("etl", help="staged ingest pipeline (acquire -> ... -> publish)")
     esub = e.add_subparsers(dest="etl_cmd", required=True)
 
     er = esub.add_parser("run", help="run a pipeline profile end to end")

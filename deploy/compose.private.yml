@@ -1,0 +1,43 @@
+# Private node: orchestration plus the operator console, sized for the work
+# and not reachable from the internet. Publishes runs to the bucket the public
+# node reads. The operator app (api + web, role all) stays on loopback; reach
+# it through a tunnel, e.g. ssh -L 8080:localhost:8080 <private-node>.
+#
+#   cp deploy/private.env.example .env   # then fill it in
+#   docker compose up -d --build
+#
+# Same project name as the all-in-one stack on purpose: converting an existing
+# box keeps its Postgres volume, which holds user-registered sources that no
+# artifact can rebuild.
+name: mineral-prospectivity
+
+# A local runs root here would publish where the public node cannot see, and
+# the public site would go stale without an error anywhere.
+x-runs-root: &runs-root
+  MPM_RUNS_ROOT: ${MPM_RUNS_ROOT:?set MPM_RUNS_ROOT to the bucket prefix the public node reads}
+
+services:
+  postgres:
+    extends: {file: ../docker-compose.yml, service: postgres}
+
+  pipeline:
+    extends: {file: ../docker-compose.yml, service: pipeline}
+    environment: *runs-root
+
+  dagster:
+    extends: {file: ../docker-compose.yml, service: dagster}
+    environment: *runs-root
+
+  dagster-daemon:
+    extends: {file: ../docker-compose.yml, service: dagster-daemon}
+    environment: *runs-root
+
+  api:
+    extends: {file: ../docker-compose.yml, service: api}
+    environment: *runs-root
+
+  web:
+    extends: {file: ../docker-compose.yml, service: web}
+
+volumes:
+  pgdata:

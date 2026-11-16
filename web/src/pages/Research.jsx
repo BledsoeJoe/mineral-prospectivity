@@ -21,6 +21,40 @@ export default function Research() {
           code.
         </p>
 
+        <h2>Three ways this task goes wrong</h2>
+        <ul>
+          <li>
+            <b>Absence is not evidence of absence.</b> Cells without a known
+            deposit are unlabeled, not barren. Addressed by positive-unlabeled
+            learning, below.
+          </li>
+          <li>
+            <b>Random cross-validation leaks.</b> Neighboring cells are near
+            copies, so random splits inflate scores. Addressed by spatial block
+            cross-validation with buffers, below.
+          </li>
+          <li>
+            <b>Deposits are recorded where people looked.</b> Exploration
+            history masquerades as geology. Addressed by quarantining effort
+            covariates and auditing the gap; the synthetic profile also checks
+            the model against deposits it was never shown.
+          </li>
+        </ul>
+
+        <h2>The metrics on the map page</h2>
+        <table>
+          <thead><tr><th>Metric</th><th>Meaning</th></tr></thead>
+          <tbody>
+            <tr><td><b>capture@5%</b></td><td>Share of known deposits inside the top 5% of ranked area. The headline.</td></tr>
+            <tr><td><b>lift@5%</b></td><td>capture@5% divided by 0.05; random ranking scores 1×.</td></tr>
+            <tr><td><b>PR-AUC</b></td><td>Precision-recall summary suited to rare positives; honest studies report low percents.</td></tr>
+            <tr><td><b>ROC-AUC</b></td><td>Reported for comparability with the literature; flattering at this base rate.</td></tr>
+            <tr><td><b>c_hat</b></td><td>Elkan &amp; Noto&apos;s P(labeled | deposit); a diagnostic, not a discovery rate.</td></tr>
+            <tr><td><b>± across folds</b></td><td>Headline metrics pool out-of-fold predictions; per-fold spread is a stability estimate.</td></tr>
+            <tr><td><b>Uncertainty layer</b></td><td>Disagreement among the 25 bagged models behind each score.</td></tr>
+          </tbody>
+        </table>
+
         <h2>Positive-unlabeled learning</h2>
         <p>
           The founding problem: we have ~10² known deposits and ~10⁴–10⁶ cells,
@@ -91,7 +125,7 @@ export default function Research() {
           The buffering discipline: beyond holding out blocks, training cells
           within 50–75 km of any held-out cell are dropped, killing the halo of
           spatially autocorrelated training data just across the fold boundary.
-          Done with an exact haversine BallTree rather than a block-quantised
+          Done with an exact haversine BallTree rather than a block-quantized
           approximation.
         </Paper>
 

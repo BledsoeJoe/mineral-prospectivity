@@ -9,3 +9,5 @@ results/
 .venv/
 web/node_modules/
 web/dist/
+notebooks/
+misc/

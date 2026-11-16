@@ -116,6 +116,8 @@ services:
     build:
       context: .
       dockerfile: docker/python.Dockerfile
+      # The same slim image the public node runs, so dev exercises it too.
+      target: api
     command: uvicorn mpm.api:app --host 0.0.0.0 --port 8000
     environment:
       <<: *python-env
@@ -145,6 +147,9 @@ services:
         VITE_CARTO_KEY: ${MAPS_API_KEY:-}
     ports:
       - "${MPM_BIND:-127.0.0.1}:${MPM_PORT:-8080}:80"
+    volumes:
+      # This stack runs Dagster, so it gets the /dagster/ proxy.
+      - ./docker/nginx-dagster.conf:/etc/nginx/mpm.d/dagster.conf:ro
     depends_on:
       - api
       - dagster
