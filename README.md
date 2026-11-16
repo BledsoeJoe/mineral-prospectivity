@@ -1,4 +1,4 @@
-# Mineral prospectivity mapping, done honestly
+# Mineral prospectivity mapping
 
 An end-to-end data system over open USGS mineral exploration data. A staged
 pipeline acquires, validates and cleans public datasets, joins them onto a
