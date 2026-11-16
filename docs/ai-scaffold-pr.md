@@ -57,6 +57,6 @@ work. Fixing that text is the first item below.
       can defend or change every decision in it
 - [ ] Same for the ingest pipeline and its label-definition choices
 - [ ] First fully self-written feature branch
-- [ ] Targeted AI-written branches with tight scopes, reviewed before merge
+- [x] Targeted AI-written branches with tight scopes, reviewed before merge
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)

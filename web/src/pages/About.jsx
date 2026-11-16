@@ -104,12 +104,12 @@ export default function About() {
           Dagster behind the app&apos;s own proxy).
         </p>
         <p>
-          Since then I have treated the codebase as one I inherited: reading
-          it, questioning it, and extending it in small, scoped changes. The
+          Since then I have treated the codebase as one I inherited,
+          extending it in small, scoped changes. The
           move to object storage and two machines was that kind of work. I
           defined the goal and constraints, decided what the public node should
-          and should not be able to do, tested the storage layer against a real
-          S3-compatible bucket, and reviewed each phase before committing it;
+          and should not be able to do, reviewed each phase before committing it, and
+          deployed the result on two machines over an S3-compatible bucket;
           the agent wrote most of the code. Directing and auditing these tools
           well is, I think, now part of the job, and this is an honest sample of
           how I do it.

@@ -125,7 +125,7 @@ four open USGS sources (~220 MB total, fetched once and cached):
 | gravity grids (isostatic, Bouguer) | covariates | same |
 | NGDB stream sediments | covariates + effort | censored values encoded as *negative detection limits*, mixed ppm/pct units, log-normal tails |
 
-Design decisions worth defending in conversation:
+Design decisions worth knowing about:
 
 - **Positives are Large/Medium producers only** (323 cells, 1-in-124 base
   rate). Include every "small producer" and the label set balloons to 2,630
@@ -231,7 +231,7 @@ wrong thing, so each boundary either fails loudly or does not exist:
 - **Control routes are absent, not guarded.** `MPM_API_ROLE=public` never
   mounts source registration or materialize, so there is nothing to probe. A
   test asserts the public route table is GET-only, so a write route added to
-  the wrong router later fails CI.
+  the wrong router later fails the test suite.
 - **No bucket, no start.** The public role refuses a local runs root, and both
   compose files refuse to interpolate without `MPM_RUNS_ROOT`. Otherwise a
   missing variable reads as "nothing published yet", or the private node
@@ -304,7 +304,7 @@ This is a positive-unlabeled (PU) problem. `mpm/pu.py` implements:
   finds *unlike* the positives. Tabular analog of the undersampling scheme in
   GFM4MPM (Mohammadi et al. 2024).
 - **The Elkan–Noto constant** `c = P(labeled | y=1)`, estimated on positives
-  each bag holds out. Estimating it on training positives (my first attempt)
+  each bag holds out. Estimating it on training positives (the first attempt)
   returns a meaningless 0.995, because a bag trained on every positive
   recognizes every positive.
 
@@ -360,7 +360,7 @@ effort_gain                       0.162
 effort_importance_share           0.787   <- effort takes 79% of model importance
 ```
 
-`outcrop_frac` is the judgment call worth defending in conversation. Exposure is
+`outcrop_frac` is the judgment call worth explaining. Exposure is
 a genuine geological property, but in this system it only affects *detection*,
 not *formation*, so it belongs in the effort group. Real cubes are full of
 covariates that sit on that line.

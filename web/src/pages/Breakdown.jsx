@@ -194,7 +194,7 @@ export default function Breakdown() {
           <code>dist_to_deposit</code>, <code>effort</code> or{' '}
           <code>_isna</code> is kept out of the headline model and only used
           to measure that bias. Renaming a column can move it across that
-          line, so names here are reviewed like an interface.
+          line, so names here are part of the interface.
         </p>
         <p>
           The same discipline applies to how a column is computed. An early
