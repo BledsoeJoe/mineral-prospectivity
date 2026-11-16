@@ -42,7 +42,7 @@ def points_to_cells(
     1. **By name within a cell.** The same deposit listed twice in one cell is
        one deposit. Names are normalized (case, punctuation, mine/deposit
        suffixes) before comparison.
-    2. **By cell.** Two genuinely distinct orebodies in the same 5 km cell
+    2. **By cell.** Two genuinely distinct orebodies in the same cell
        still produce one positive label, because the cell is the unit of
        prediction. Collapsing them is correct; counting them twice would
        silently upweight well-endowed districts.

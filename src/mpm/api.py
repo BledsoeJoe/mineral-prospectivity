@@ -102,7 +102,9 @@ def health(request: Request) -> dict:
         "ok": True,
         "role": role,
         "data_root": str(DATA_ROOT),
-        "runs_root": RUNS_ROOT.uri,
+        # The public node names the backend only; the bucket path is not
+        # something to advertise.
+        "runs_root": RUNS_ROOT.uri if controls else RUNS_ROOT.protocol,
         "profiles": _profiles(),
         "catalog_db": db.available(),
         # What the frontend may offer; it hides controls this node cannot serve.

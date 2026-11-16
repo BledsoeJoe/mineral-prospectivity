@@ -361,7 +361,7 @@ export default function Architecture() {
               <td><b>geochem</b></td>
               <td>NGDB stream sediments → per-cell log-median chemistry</td>
               <td>
-                Censored values encoded as <i>negative detection limits</i>
+                Censored values encoded as <i>negative detection limits</i>{' '}
                 (substituted DL/2), mixed ppm/pct units, 40% of measurements
                 censored.
               </td>

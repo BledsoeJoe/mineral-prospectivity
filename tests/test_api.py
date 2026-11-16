@@ -79,6 +79,8 @@ def test_public_role_serves_reads_only(remote_runs, monkeypatch: pytest.MonkeyPa
     body = TestClient(app).get("/api/health").json()
     assert body["role"] == "public"
     assert not any(body["capabilities"].values())
+    # The bucket path stays private; only the backend kind is reported.
+    assert body["runs_root"] == "memory"
 
 
 def test_public_role_refuses_local_runs_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

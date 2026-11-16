@@ -145,7 +145,7 @@ Design decisions worth defending in conversation:
 On that real cube, the honest headline is capture@5% = 0.42 (geology only,
 spatial CV, top drivers: Bouguer gravity, Cu/Zn/As stream-sediment
 geochemistry). The bias audit then shows what contamination buys: add effort
-proxies and capture jumps to 0.78 with 82% of model importance sitting on
+proxies and capture jumps to 0.78 with 84% of model importance sitting on
 effort covariates: a model that would send every drill rig to ground the
 industry already knows. The controls behind these numbers are covered in
 [The three problems](#the-three-problems).
